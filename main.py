@@ -17,6 +17,7 @@ import uvicorn
 from wsp.bot import WSPBot
 from wsp.config import Settings
 from wsp.db import Database
+from wsp.github_db import GitHubDatabase
 from wsp.logging_setup import setup_logging
 from wsp.web.app import create_app
 
@@ -28,9 +29,22 @@ async def run() -> None:
     settings.ensure_directories()
     setup_logging(settings.log_level, settings.logs_dir)
 
+    github_db = GitHubDatabase(settings)
+    if github_db.enabled:
+        log.info(
+            "GitHub database sync enabled for %s on branch %s",
+            settings.github_repo,
+            settings.github_db_branch,
+        )
+    try:
+        await github_db.restore(settings.database_path)
+    except Exception:
+        log.exception("Could not restore the database from GitHub; starting with the local file")
+
     db = Database(settings.database_path, settings.backups_dir)
     await db.connect()
     bot = WSPBot(settings, db)
+    bot.github_db = github_db
     app = create_app(bot, db, settings)
 
     config = uvicorn.Config(
@@ -80,6 +94,11 @@ async def run() -> None:
             await db.backup()
         except Exception:
             log.exception("Shutdown backup failed")
+        if github_db.enabled:
+            try:
+                await github_db.push(db)
+            except Exception:
+                log.exception("Shutdown GitHub database push failed")
         if bot.is_ready() or bot_task:
             await bot.close()
         if bot_task and not bot_task.done():

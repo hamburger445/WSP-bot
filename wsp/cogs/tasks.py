@@ -22,10 +22,12 @@ class ScheduledTasks(commands.Cog):
         self.bot = bot
         self.hourly.start()
         self.backup_job.start()
+        self.github_sync.start()
 
     def cog_unload(self) -> None:
         self.hourly.cancel()
         self.backup_job.cancel()
+        self.github_sync.cancel()
 
     @tasks.loop(hours=1)
     async def hourly(self) -> None:
@@ -50,6 +52,20 @@ class ScheduledTasks(commands.Cog):
 
     @backup_job.before_loop
     async def before_backup(self) -> None:
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=15)
+    async def github_sync(self) -> None:
+        github_db = getattr(self.bot, "github_db", None)
+        if github_db is None or not github_db.enabled:
+            return
+        try:
+            await github_db.push(self.bot.db)
+        except Exception:
+            log.exception("GitHub database sync failed")
+
+    @github_sync.before_loop
+    async def before_github_sync(self) -> None:
         await self.bot.wait_until_ready()
 
     async def _probation_notices(self, guild_id: int) -> None:

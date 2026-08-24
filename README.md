@@ -99,6 +99,10 @@ No separate database server is required.
 
 On first start the bot creates `data/wsp.db` and all tables. Automatic backups are written to `data/backups/` every six hours and on shutdown (last 14 kept). Ticket transcripts go to `data/transcripts/`.
 
+If `GITHUB_TOKEN` is set, the same database is also stored on GitHub on the **`data` branch** (`data/wsp.db`). That is where shift logs, `/setupserver` IDs, personnel, and the rest persist across Render deploys. The bot restores from GitHub on startup when the local file is empty, and pushes an update every 15 minutes, after setup changes, and on shutdown.
+
+Create a token: GitHub → **Settings → Developer settings → Personal access tokens → Fine-grained tokens**. Grant this repo **Contents: Read and write**. Put the token in `GITHUB_TOKEN` locally and on Render. Leave it off `main` — snapshots go to the `data` branch so deploys are not retriggered.
+
 To move to PostgreSQL later, keep the same table names/columns and swap the engine in `wsp/db.py`.
 
 ---
@@ -166,6 +170,8 @@ This app is already a single **Web Service**: `python main.py` binds Render’s 
    | `HOST` | `0.0.0.0` |
    | `DATABASE_PATH` | `/var/data/wsp.db` |
    | `TIMEZONE` | `America/Chicago` |
+   | `GITHUB_TOKEN` | Fine-grained PAT with **Contents: Read and write** on this repo |
+   | `GITHUB_REPO` | `hamburger445/WSP-bot` (optional if git origin is set) |
 
 7. After the first deploy, copy the `onrender.com` URL. In the Discord Developer Portal → OAuth2 → Redirects, add:  
    `https://<your-service>.onrender.com/auth/callback`

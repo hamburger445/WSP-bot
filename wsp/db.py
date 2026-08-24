@@ -338,6 +338,17 @@ class Database:
         log.info("Database backup written to %s", dest)
         return dest
 
+    async def snapshot_bytes(self) -> bytes:
+        """WAL-checkpointed copy of the live database for GitHub backup."""
+        if not self.path.exists():
+            return b""
+        try:
+            await self.conn.execute("PRAGMA wal_checkpoint(FULL)")
+            await self.conn.commit()
+        except Exception:
+            log.exception("WAL checkpoint failed before GitHub snapshot")
+        return self.path.read_bytes()
+
     async def execute(self, sql: str, params: tuple | list = ()) -> aiosqlite.Cursor:
         cur = await self.conn.execute(sql, params)
         await self.conn.commit()

@@ -45,3 +45,7 @@ services:
         generateValue: true
       - key: DASHBOARD_BASE_URL
         sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        sync: false

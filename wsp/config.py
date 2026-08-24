@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -81,12 +83,30 @@ class Settings:
         self.backups_dir = self.data_dir / "backups"
         self.transcripts_dir = self.data_dir / "transcripts"
         self.logs_dir = self.data_dir / "logs"
+        self.github_token = _env("GITHUB_TOKEN") or _env("GH_TOKEN")
+        self.github_repo = _env("GITHUB_REPO") or _env("GITHUB_REPOSITORY") or _detect_github_repo()
+        self.github_db_branch = _env("GITHUB_DB_BRANCH", "data")
+        self.github_db_path = _env("GITHUB_DB_PATH", "data/wsp.db").lstrip("/")
 
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.backups_dir.mkdir(parents=True, exist_ok=True)
         self.transcripts_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _detect_github_repo() -> str:
+    try:
+        remote = subprocess.check_output(
+            ["git", "remote", "get-url", "origin"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return ""
+    match = re.search(r"github\.com[:/](?P<repo>[^/]+/[^/.]+?)(?:\.git)?$", remote)
+    return match.group("repo") if match else ""
 
 
 def load_default_config() -> dict[str, Any]:
