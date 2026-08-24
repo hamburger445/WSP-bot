@@ -71,7 +71,10 @@ class WSPBot(commands.Bot):
 
     def _prepare_slash_menu(self) -> None:
         """Keep slash commands in guild / menus, not DMs or user-install apps."""
-        for command in self.tree.get_commands():
+        for command in self.tree.walk_commands():
+            desc = getattr(command, "description", None)
+            if isinstance(desc, str) and len(desc) > 100:
+                command.description = desc[:97].rstrip() + "..."
             command.guild_only = True
             try:
                 command.allowed_contexts = app_commands.AppCommandContext(

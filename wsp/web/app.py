@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -104,8 +104,10 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return RedirectResponse("/?denied=1", status_code=302)
         return None
 
-    @app.get("/health")
-    async def health() -> JSONResponse:
+    @app.api_route("/health", methods=["GET", "HEAD"])
+    async def health(request: Request) -> JSONResponse | Response:
+        if request.method == "HEAD":
+            return Response(status_code=200)
         return JSONResponse(
             {
                 "ok": True,
@@ -119,6 +121,10 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 "bot_error": getattr(bot, "last_error", None),
             }
         )
+
+    @app.head("/")
+    async def root_head() -> Response:
+        return Response(status_code=200)
 
     @app.get("/login", response_class=HTMLResponse)
     async def login(request: Request) -> Any:

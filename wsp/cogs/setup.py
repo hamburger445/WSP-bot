@@ -61,7 +61,7 @@ class Setup(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="setupserver", description="Create WSP roles, categories, and channels (owner only). Does not delete existing data.")
+    @app_commands.command(name="setupserver", description="Create WSP roles, categories, and channels without deleting existing data.")
     @is_owner()
     async def setupserver(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
@@ -266,7 +266,7 @@ class Setup(commands.Cog):
             synced = await self.bot.tree.sync()
         await interaction.followup.send(embed=success_embed("Commands synced", f"{len(synced)} commands published."), ephemeral=True)
 
-    @app_commands.command(name="resetserver", description="Clear stored department configuration for this guild. Does not delete Discord roles/channels unless confirmed.")
+    @app_commands.command(name="resetserver", description="Clear stored WSP config for this guild. Discord data is kept unless confirmed.")
     @is_owner()
     @app_commands.describe(wipe_discord="If true, also delete WSP-managed roles and channels created by name")
     async def resetserver(self, interaction: discord.Interaction, wipe_discord: bool = False) -> None:
