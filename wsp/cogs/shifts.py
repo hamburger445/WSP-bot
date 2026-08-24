@@ -13,7 +13,7 @@ from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.permissions import has_level
 from wsp.utils import current_shift_seconds, mention_or_id
-from wsp.views.shifts import ShiftMenuView, build_duty_board, build_leaderboard, start_shift_for
+from wsp.views.shifts import ShiftActionView, ShiftMenuView, build_duty_board, build_leaderboard, build_personal_shift, start_shift_for
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -32,6 +32,10 @@ class Shifts(commands.Cog):
             return
         embed = await build_duty_board(self.bot, interaction.guild)
         await interaction.response.send_message(embed=embed, view=ShiftMenuView())
+        row = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
+        status = row["status"] if row else None
+        personal = await build_personal_shift(self.bot, interaction.guild, interaction.user, row)
+        await interaction.followup.send(embed=personal, view=ShiftActionView(status), ephemeral=True)
 
     @shift.command(name="status", description="Show who is currently on duty.")
     async def status(self, interaction: discord.Interaction) -> None:
@@ -45,7 +49,7 @@ class Shifts(commands.Cog):
             lines = []
             for row in rows:
                 lines.append(
-                    f"{mention_or_id(interaction.guild, row['discord_id'])} `{row['callsign'] or '—'}` **{row['rank_name'] or ''}** "
+                    f"{mention_or_id(interaction.guild, row['discord_id'])} **{row['rank_name'] or ''}** "
                     f"{row['status']} • {format_duration(current_shift_seconds(row))} • started {ts_rel(row['start_time'])}"
                 )
             embed.description = "\n".join(lines)[:4000]
@@ -114,10 +118,15 @@ class Shifts(commands.Cog):
             target_id=row["discord_id"], details=f"#{shift_id} {fields}",
         )
         await interaction.response.send_message(embed=success_embed("Shift corrected", f"Record `#{shift_id}` updated."), ephemeral=True)
+        await self.bot.notify(
+            interaction.guild,
+            "shift_log",
+            base_embed("Shift corrected", f"{interaction.user.mention} updated shift `#{shift_id}`."),
+        )
 
     @shift.command(name="start", description="Start a duty shift.")
-    async def start(self, interaction: discord.Interaction, callsign: str) -> None:
-        await start_shift_for(interaction, callsign)
+    async def start(self, interaction: discord.Interaction) -> None:
+        await start_shift_for(interaction)
 
 
 async def setup(bot: WSPBot) -> None:

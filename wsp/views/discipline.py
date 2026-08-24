@@ -244,7 +244,6 @@ async def decide_appeal(
         except discord.HTTPException:
             pass
     await bot.notify(interaction.guild, "discipline", staff)
-    await bot.notify(interaction.guild, "command_log", staff)
     if status == "overturned":
         member_embed = success_embed(
             "Appeal granted",

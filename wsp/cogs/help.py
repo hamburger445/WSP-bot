@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
     ("Duty", "Shifts and quota", [
-        "`/shift menu` — public duty board: start, pause, resume, or end your shift",
+        "`/shift menu` — public duty board plus your shift controls",
         "`/shift start` `/shift status` `/shift leaderboard` `/shift history`",
         "`/quota view` `/quota leaderboard`",
         "`/profile` — your personnel file",

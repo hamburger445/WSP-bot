@@ -62,6 +62,11 @@ class Personnel(commands.Cog):
             embed=success_embed("Personnel added", f"{member.mention} is now on the roster as **{rank}**."),
             ephemeral=True,
         )
+        await self.bot.notify(
+            interaction.guild,
+            "command_log",
+            base_embed("Personnel added", f"{member.mention} appointed **{rank}** by {interaction.user.mention}."),
+        )
 
     @add.autocomplete("rank")
     async def rank_ac(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
@@ -82,6 +87,12 @@ class Personnel(commands.Cog):
             target_id=member.id, target_name=str(member), details=note_type,
         )
         await interaction.response.send_message(embed=success_embed("Note recorded", f"{note_type.upper()} note added to {member.mention}."), ephemeral=True)
+        log_key = "hr_log" if note_type == "hr" else "command_log"
+        await self.bot.notify(
+            interaction.guild,
+            log_key,
+            base_embed(f"{note_type.upper()} note", f"{member.mention}\n{content}"),
+        )
 
     @personnel.command(name="transfer", description="Update a member's department position.")
     @has_level(PermissionLevel.HR)
@@ -112,7 +123,6 @@ class Personnel(commands.Cog):
             target_id=member.id, target_name=str(member), details=reason,
         )
         await interaction.response.send_message(embed=success_embed("Member suspended", f"{member.mention}\n{reason}"), ephemeral=True)
-        await self.bot.notify(interaction.guild, "command_log", base_embed("Suspension", f"{member.mention} — {reason}"))
         await self.bot.notify(interaction.guild, "discipline", base_embed("Suspension", f"{member.mention} — {reason}"))
 
     @personnel.command(name="remove", description="Remove a member from the WSP roster.")
@@ -127,7 +137,7 @@ class Personnel(commands.Cog):
             target_id=member.id, target_name=str(member), details=reason,
         )
         await interaction.response.send_message(embed=success_embed("Member removed", f"{member.mention} is no longer on the roster."), ephemeral=True)
-        await self.bot.notify(interaction.guild, "command_log", base_embed("Roster removal", f"{member.mention} — {reason}"))
+        await self.bot.notify(interaction.guild, "discipline", base_embed("Roster removal", f"{member.mention} — {reason}"))
         await self.bot.notify(interaction.guild, "notifications", base_embed("Roster removal", f"{member.mention} — {reason}"))
 
     @personnel.command(name="reinstate", description="Return a suspended or removed member to active status.")
@@ -142,6 +152,11 @@ class Personnel(commands.Cog):
             target_id=member.id, target_name=str(member), details=reason,
         )
         await interaction.response.send_message(embed=success_embed("Reinstated", f"{member.mention} is active."), ephemeral=True)
+        await self.bot.notify(
+            interaction.guild,
+            "command_log",
+            base_embed("Reinstated", f"{member.mention} — {reason}"),
+        )
 
     @personnel.command(name="history", description="View rank and status history for a member.")
     @has_level(PermissionLevel.HR)

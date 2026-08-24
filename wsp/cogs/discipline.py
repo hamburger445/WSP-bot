@@ -89,7 +89,6 @@ class Discipline(commands.Cog):
             ephemeral=True,
         )
         await self.bot.notify(interaction.guild, "discipline", embed)
-        await self.bot.notify(interaction.guild, "command_log", embed)
 
     @add.autocomplete("action")
     async def action_ac(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
@@ -131,6 +130,11 @@ class Discipline(commands.Cog):
             target_id=row["discord_id"], details=f"#{record_id} {reason}",
         )
         await interaction.response.send_message(embed=success_embed("Record deactivated", f"Discipline `#{record_id}` is no longer active."), ephemeral=True)
+        await self.bot.notify(
+            interaction.guild,
+            "discipline",
+            base_embed("Discipline deactivated", f"Record `#{record_id}` — {reason}\nBy {interaction.user.mention}"),
+        )
 
     @discipline.command(name="appeals", description="List pending disciplinary appeals.")
     @has_level(PermissionLevel.HR)

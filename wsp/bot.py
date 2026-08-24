@@ -53,7 +53,7 @@ class WSPBot(commands.Bot):
         self._synced = False
 
     async def setup_hook(self) -> None:
-        from wsp.views.shifts import ShiftMenuView
+        from wsp.views.shifts import ShiftActionView, ShiftMenuView
         from wsp.views.tickets import TicketControlsView, TicketPanelView
         from wsp.cogs.loa import DenyLOAButton, ApproveLOAButton
         from wsp.views.discipline import AppealOpenButton, AppealOverturnButton, AppealUpholdButton
@@ -61,6 +61,7 @@ class WSPBot(commands.Bot):
         self.add_view(TicketPanelView())
         self.add_view(TicketControlsView())
         self.add_view(ShiftMenuView())
+        self.add_view(ShiftActionView(lock_buttons=False))
         self.add_dynamic_items(ApproveLOAButton, DenyLOAButton)
         self.add_dynamic_items(AppealOpenButton, AppealUpholdButton, AppealOverturnButton)
         self.tree.on_error = self.on_app_command_error
