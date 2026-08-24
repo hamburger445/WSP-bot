@@ -104,8 +104,8 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return RedirectResponse("/?denied=1", status_code=302)
         return None
 
-    @app.api_route("/health", methods=["GET", "HEAD"])
-    async def health(request: Request) -> JSONResponse | Response:
+    @app.api_route("/health", methods=["GET", "HEAD"], response_model=None)
+    async def health(request: Request) -> Any:
         if request.method == "HEAD":
             return Response(status_code=200)
         return JSONResponse(
@@ -122,8 +122,8 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             }
         )
 
-    @app.head("/")
-    async def root_head() -> Response:
+    @app.api_route("/", methods=["HEAD"], response_model=None)
+    async def root_head() -> Any:
         return Response(status_code=200)
 
     @app.get("/login", response_class=HTMLResponse)
