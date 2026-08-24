@@ -1,0 +1,100 @@
+{
+  "guild_id": "",
+  "timezone": "America/Chicago",
+  "branding": {
+    "department": "Wisconsin State Patrol",
+    "community": "Lakeville Roleplay",
+    "short_name": "WSP",
+    "footer": "Wisconsin State Patrol  •  Lakeville Roleplay"
+  },
+  "roles": {
+    "wsp": "",
+    "hr": "",
+    "command": "",
+    "supervisor": "",
+    "superintendent": ""
+  },
+  "rank_roles": {
+    "Probationary Trooper": "",
+    "Trooper": "",
+    "Senior Trooper": "",
+    "Master Trooper": "",
+    "Corporal": "",
+    "Sergeant": "",
+    "Lieutenant": "",
+    "Captain": "",
+    "Major": "",
+    "Lieutenant Colonel": "",
+    "Colonel": "",
+    "Superintendent": ""
+  },
+  "channels": {
+    "applications": "",
+    "promotions": "",
+    "discipline": "",
+    "loa": "",
+    "quota": "",
+    "notifications": "",
+    "hr_log": "",
+    "command_log": "",
+    "audit_log": "",
+    "fastpass": "",
+    "supervision": "",
+    "probation": "",
+    "tickets_log": "",
+    "ticket_panel": "",
+    "resignations": ""
+  },
+  "categories": {
+    "tickets": "",
+    "command": "",
+    "logs": ""
+  },
+  "quota": {
+    "weekly_minutes": 180,
+    "hr_supervision_minutes": 30,
+    "reminder_hours_before_reset": 24,
+    "approaching_percent": 50
+  },
+  "probation": {
+    "duration_days": 14,
+    "notify_hours_before": 48
+  },
+  "training": {
+    "required_modules": [
+      "Traffic Stops",
+      "Radio Communications",
+      "Report Writing",
+      "Use of Force",
+      "Pursuit Policy"
+    ]
+  },
+  "vehicles": {
+    "enabled": true,
+    "fleet": [
+      "Marked Tahoe",
+      "Marked Charger",
+      "Unmarked Charger",
+      "Motorcycle",
+      "Slicktop Explorer"
+    ]
+  },
+  "loa": {
+    "min_hours_notice": 12,
+    "max_days": 30
+  },
+  "ranks": [
+    {"name": "Probationary Trooper", "position": 1, "permission_level": 1},
+    {"name": "Trooper", "position": 2, "permission_level": 1},
+    {"name": "Senior Trooper", "position": 3, "permission_level": 1},
+    {"name": "Master Trooper", "position": 4, "permission_level": 1},
+    {"name": "Corporal", "position": 5, "permission_level": 2},
+    {"name": "Sergeant", "position": 6, "permission_level": 2},
+    {"name": "Lieutenant", "position": 7, "permission_level": 3},
+    {"name": "Captain", "position": 8, "permission_level": 4},
+    {"name": "Major", "position": 9, "permission_level": 4},
+    {"name": "Lieutenant Colonel", "position": 10, "permission_level": 4},
+    {"name": "Colonel", "position": 11, "permission_level": 4},
+    {"name": "Superintendent", "position": 12, "permission_level": 5}
+  ]
+}

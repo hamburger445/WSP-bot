@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Discipline{% endblock %}
+{% block heading %}Disciplinary file{% endblock %}
+{% block content %}
+<section class="panel">
+  <table>
+    <thead><tr><th>ID</th><th>Member</th><th>Action</th><th>Reason</th><th>When</th><th>Active</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="mono">#{{ row.id }}</td>
+        <td><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a></td>
+        <td>{{ row.action }}</td>
+        <td>{{ row.reason }}</td>
+        <td>{{ row.created_at | when }}</td>
+        <td>{{ "yes" if row.active else "no" }}</td>
+      </tr>
+      {% else %}<tr><td colspan="6" class="empty">No disciplinary records.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

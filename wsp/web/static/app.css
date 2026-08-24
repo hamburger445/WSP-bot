@@ -1,0 +1,235 @@
+:root {
+  --night: #071018;
+  --ink: #0c1a28;
+  --panel: #102033;
+  --line: rgba(201, 162, 39, 0.28);
+  --brass: #c9a227;
+  --brass-soft: #e4d09a;
+  --paper: #f3ead7;
+  --muted: #8ea0b5;
+  --danger: #c45c5c;
+  --ok: #3e8f6e;
+  --warn: #d08a3a;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(201, 162, 39, 0.08), transparent 50%),
+    linear-gradient(180deg, #08131f 0%, var(--night) 100%);
+  color: var(--paper);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+}
+
+.rail {
+  background: linear-gradient(180deg, #0b1c2e 0%, #071422 100%);
+  border-right: 1px solid var(--line);
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.badge { display: flex; gap: 12px; align-items: center; }
+.badge-ring {
+  width: 52px; height: 52px; border-radius: 50%;
+  border: 2px solid var(--brass);
+  display: grid; place-items: center;
+  box-shadow: 0 0 0 4px rgba(201, 162, 39, 0.12);
+}
+.badge-mark {
+  font-family: "Instrument Serif", Georgia, serif;
+  color: var(--brass);
+  letter-spacing: 0.08em;
+  font-size: 14px;
+}
+.kicker {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.sub, .badge-copy .sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+
+nav { display: flex; flex-direction: column; gap: 4px; }
+.nav-link {
+  color: var(--muted);
+  text-decoration: none;
+  padding: 8px 10px;
+  border-left: 2px solid transparent;
+  font-size: 14px;
+}
+.nav-link:hover { color: var(--paper); }
+.nav-link.is-active {
+  color: var(--brass-soft);
+  border-left-color: var(--brass);
+  background: rgba(201, 162, 39, 0.06);
+}
+
+.rail-foot {
+  margin-top: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.signal {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+.signal.live { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+.stage { padding: 32px 40px 64px; }
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 18px;
+  margin-bottom: 28px;
+}
+.eyebrow {
+  margin: 0;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--brass);
+}
+h1 {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-weight: 400;
+  font-size: 42px;
+  margin: 6px 0 0;
+}
+h2 {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-weight: 400;
+  font-size: 24px;
+  margin: 0 0 16px;
+}
+.who { display: flex; gap: 16px; align-items: center; color: var(--muted); font-size: 13px; }
+.who strong { display: block; color: var(--paper); }
+.ghost {
+  color: var(--brass-soft);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 16px;
+}
+.stat span { display: block; color: var(--muted); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+.stat strong {
+  display: block;
+  margin-top: 10px;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 32px;
+  font-weight: 400;
+}
+
+.split { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 20px; }
+.panel {
+  background: rgba(16, 32, 51, 0.72);
+  border: 1px solid var(--line);
+  padding: 22px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th {
+  text-align: left;
+  color: var(--brass);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 8px 8px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+td { padding: 10px 8px 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
+a { color: var(--brass-soft); }
+.mono { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+.empty { color: var(--muted); }
+.banner {
+  background: rgba(196, 92, 92, 0.12);
+  border: 1px solid rgba(196, 92, 92, 0.35);
+  color: #f0c7c7;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pill.active, .pill.approved, .pill.complete, .pill.passed { color: var(--ok); border-color: var(--ok); }
+.pill.paused, .pill.pending, .pill.extended { color: var(--warn); border-color: var(--warn); }
+.pill.denied, .pill.failed, .pill.removed { color: var(--danger); border-color: var(--danger); }
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--paper); }
+.timeline span { display: block; color: var(--muted); font-size: 11px; font-family: "IBM Plex Mono", monospace; }
+.spaced { margin-top: 28px; }
+
+.login-body {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+.login-card {
+  width: min(460px, 92vw);
+  padding: 48px 40px;
+  border: 1px solid var(--line);
+  background: rgba(12, 26, 40, 0.92);
+  text-align: center;
+}
+.login-seal {
+  width: 72px; height: 72px; margin: 0 auto 18px;
+  border: 2px solid var(--brass); border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: "Instrument Serif", Georgia, serif;
+  color: var(--brass); letter-spacing: 0.12em;
+}
+.login-card h1 { font-size: 34px; }
+.lede { color: var(--muted); line-height: 1.5; }
+.gold-btn {
+  display: inline-block;
+  margin-top: 12px;
+  background: var(--brass);
+  color: #1a1406;
+  text-decoration: none;
+  padding: 12px 22px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.fine { margin-top: 22px; color: var(--muted); font-size: 12px; }
+.grid-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 16px; }
+.meta { color: var(--muted); font-size: 13px; }
+
+@media (max-width: 1100px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail { flex-direction: row; flex-wrap: wrap; }
+  nav { flex-direction: row; flex-wrap: wrap; }
+  .stats, .split, .grid-cards { grid-template-columns: 1fr; }
+  .stage { padding: 24px 18px 48px; }
+  h1 { font-size: 32px; }
+}

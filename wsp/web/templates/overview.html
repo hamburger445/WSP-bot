@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block heading %}Night watch{% endblock %}
+{% block content %}
+<section class="stats">
+  <article class="stat">
+    <span>Active personnel</span>
+    <strong>{{ counts.active_personnel }}</strong>
+  </article>
+  <article class="stat">
+    <span>On duty</span>
+    <strong>{{ counts.active_shifts }}</strong>
+  </article>
+  <article class="stat">
+    <span>On LOA</span>
+    <strong>{{ counts.loa }}</strong>
+  </article>
+  <article class="stat">
+    <span>Probation</span>
+    <strong>{{ counts.probation }}</strong>
+  </article>
+  <article class="stat">
+    <span>Awaiting supervision</span>
+    <strong>{{ counts.awaiting_supervision }}</strong>
+  </article>
+  <article class="stat">
+    <span>Quota this week</span>
+    <strong>{{ quota_complete }}/{{ quota_total }}</strong>
+  </article>
+</section>
+
+<div class="split">
+  <section class="panel">
+    <h2>Active shifts</h2>
+    {% if shifts %}
+    <table>
+      <thead><tr><th>Member</th><th>Callsign</th><th>Rank</th><th>Status</th><th>Elapsed</th></tr></thead>
+      <tbody>
+        {% for row in shifts %}
+        <tr>
+          <td><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a></td>
+          <td class="mono">{{ row.callsign or "—" }}</td>
+          <td>{{ row.rank_name or "—" }}</td>
+          <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>
+          <td class="mono">{{ row.duration_seconds | duration if row.duration_seconds else "live" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No troopers currently on duty.</p>
+    {% endif %}
+  </section>
+  <section class="panel">
+    <h2>Recent promotions</h2>
+    {% if promotions %}
+    <ul class="timeline">
+      {% for row in promotions %}
+      <li><span>{{ row.created_at | when }}</span>{{ row.target_name or row.target_id }} — {{ row.details }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No recent promotions.</p>
+    {% endif %}
+    <h2 class="spaced">Recent discipline</h2>
+    {% if discipline %}
+    <ul class="timeline">
+      {% for row in discipline %}
+      <li><span>{{ row.created_at | when }}</span><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a> — {{ row.action }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No recent actions.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

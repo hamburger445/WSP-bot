@@ -1,0 +1,47 @@
+# Render Blueprint — one Web Service runs the Discord bot AND the dashboard.
+# Connect this repo in Render (New → Blueprint) or create a Web Service from GitHub.
+#
+# Use a paid instance (Starter or higher). Free web services sleep after idle time,
+# which disconnects the Discord bot.
+#
+# After the first deploy, set DASHBOARD_BASE_URL to https://<your-service>.onrender.com
+# (or leave it blank — RENDER_EXTERNAL_URL is used automatically) and add
+# https://<your-service>.onrender.com/auth/callback as a Discord OAuth2 redirect.
+
+services:
+  - type: web
+    name: wsp-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: wsp-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: DATABASE_PATH
+        value: /var/data/wsp.db
+      - key: TIMEZONE
+        value: America/Chicago
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: OWNER_IDS
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: DASHBOARD_SECRET_KEY
+        generateValue: true
+      - key: DASHBOARD_BASE_URL
+        sync: false

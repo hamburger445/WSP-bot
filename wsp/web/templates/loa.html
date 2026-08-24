@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}LOA{% endblock %}
+{% block heading %}Leave of absence{% endblock %}
+{% block content %}
+<section class="panel">
+  <table>
+    <thead><tr><th>ID</th><th>Member</th><th>Window</th><th>Reason</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="mono">#{{ row.id }}</td>
+        <td><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a></td>
+        <td>{{ row.start_date | when }} → {{ row.end_date | when }}</td>
+        <td>{{ row.reason }}</td>
+        <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>
+      </tr>
+      {% else %}<tr><td colspan="5" class="empty">No LOA records.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

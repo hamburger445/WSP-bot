@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Command Center{% endblock %} · WSP LVRP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div class="badge">
+        <div class="badge-ring">
+          <span class="badge-mark">WSP</span>
+        </div>
+        <div class="badge-copy">
+          <p class="kicker">Wisconsin State Patrol</p>
+          <p class="sub">Lakeville Roleplay</p>
+        </div>
+      </div>
+      <nav>
+        {% for key, href, label in nav %}
+          {% if key != 'settings' or (user and user.level >= 5) %}
+          <a class="nav-link{% if page == key %} is-active{% endif %}" href="{{ href }}">{{ label }}</a>
+          {% endif %}
+        {% endfor %}
+      </nav>
+      <div class="rail-foot">
+        <div class="signal {{ 'live' if bot_ready else 'down' }}"></div>
+        <span>{{ 'Bot linked' if bot_ready else 'Bot offline' }}</span>
+      </div>
+    </aside>
+    <main class="stage">
+      <header class="top">
+        <div>
+          <p class="eyebrow">Command Center</p>
+          <h1>{% block heading %}Overview{% endblock %}</h1>
+        </div>
+        <div class="who">
+          {% if user %}
+            <div>
+              <strong>{{ user.username }}</strong>
+              <span>{{ level_label }}</span>
+            </div>
+            <a class="ghost" href="/logout">Sign out</a>
+          {% endif %}
+        </div>
+      </header>
+      {% if denied %}
+        <div class="banner">That desk requires a higher access level.</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

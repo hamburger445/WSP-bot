@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · WSP Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <div class="login-seal">
+      <span>WSP</span>
+    </div>
+    <p class="kicker">Lakeville Roleplay</p>
+    <h1>Wisconsin State Patrol</h1>
+    <p class="lede">Command Center. Restricted to department personnel. Sign in with Discord to continue.</p>
+    {% if error == 'guild' %}
+      <p class="banner">You are not a member of the configured WSP guild.</p>
+    {% elif error %}
+      <p class="banner">Sign-in failed. Check OAuth client ID, secret, and redirect URL.</p>
+    {% endif %}
+    {% if oauth_ready %}
+      <a class="gold-btn" href="/auth/discord">Continue with Discord</a>
+    {% else %}
+      <p class="banner">Set <code>DISCORD_CLIENT_ID</code> and <code>DISCORD_CLIENT_SECRET</code> in <code>.env</code>, and add the redirect <code>{{ request.base_url }}auth/callback</code> in the Discord Developer Portal.</p>
+    {% endif %}
+    <p class="fine">Duty logs, personnel files, and disciplinary records are audited.</p>
+  </div>
+</body>
+</html>

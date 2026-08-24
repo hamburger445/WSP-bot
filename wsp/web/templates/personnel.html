@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Personnel{% endblock %}
+{% block heading %}Personnel roster{% endblock %}
+{% block content %}
+<section class="panel">
+  <table>
+    <thead><tr><th>Member</th><th>Rank</th><th>Position</th><th>Status</th><th>Training</th><th>Probation</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="/personnel/{{ row.discord_id }}">{{ row.username }}</a><div class="mono">{{ row.discord_id }}</div></td>
+        <td>{{ row.rank_name or "—" }}</td>
+        <td>{{ row.position or "Patrol" }}</td>
+        <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>
+        <td>{{ row.training_status }}</td>
+        <td>{{ row.probation_status }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">No personnel records yet. Use /personnel add in Discord.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

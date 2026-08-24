@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ record.username }}{% endblock %}
+{% block heading %}{{ record.username }}{% endblock %}
+{% block content %}
+<p class="meta">{{ record.rank_name or "Unassigned" }} · {{ record.position or "Patrol" }} · {{ record.callsign or "no callsign" }}</p>
+<div class="stats">
+  <article class="stat"><span>Status</span><strong>{{ record.status }}</strong></article>
+  <article class="stat"><span>Training</span><strong>{{ record.training_status }}</strong></article>
+  <article class="stat"><span>Supervision</span><strong>{{ record.supervision_status }}</strong></article>
+  <article class="stat"><span>Probation</span><strong>{{ record.probation_status }}</strong></article>
+  <article class="stat"><span>Joined</span><strong style="font-size:18px">{{ record.join_date | when }}</strong></article>
+  <article class="stat"><span>Discord ID</span><strong style="font-size:16px" class="mono">{{ record.discord_id }}</strong></article>
+</div>
+<div class="split">
+  <section class="panel">
+    <h2>Rank history</h2>
+    <ul class="timeline">
+      {% for row in history %}
+      <li><span>{{ row.created_at | when }}</span>{{ row.action }} — {{ row.from_rank or "—" }} → {{ row.to_rank or "—" }}<br>{{ row.reason }}</li>
+      {% else %}<li class="empty">No rank history.</li>{% endfor %}
+    </ul>
+    <h2 class="spaced">Notes</h2>
+    <ul class="timeline">
+      {% for row in notes %}
+      <li><span>{{ row.note_type }} · {{ row.created_at | when }}</span>{{ row.content }}</li>
+      {% else %}<li class="empty">No notes.</li>{% endfor %}
+    </ul>
+  </section>
+  <section class="panel">
+    <h2>Training</h2>
+    <ul class="timeline">
+      {% for row in training %}
+      <li><span>{{ row.status }}</span>{{ row.module }}</li>
+      {% else %}<li class="empty">No modules.</li>{% endfor %}
+    </ul>
+    <h2 class="spaced">Discipline</h2>
+    <ul class="timeline">
+      {% for row in discipline %}
+      <li><span>{{ row.created_at | when }}</span>{{ row.action }} — {{ row.reason }}</li>
+      {% else %}<li class="empty">Clean file.</li>{% endfor %}
+    </ul>
+    <h2 class="spaced">Vehicles</h2>
+    <ul class="timeline">
+      {% for row in vehicles %}
+      <li><span>{{ row.status }}</span>{{ row.vehicle_name }} {{ row.plate or "" }}</li>
+      {% else %}<li class="empty">None assigned.</li>{% endfor %}
+    </ul>
+  </section>
+</div>
+<section class="panel" style="margin-top:20px">
+  <h2>Activity</h2>
+  <ul class="timeline">
+    {% for row in activity %}
+    <li><span>{{ row.created_at | when }}</span>{{ row.activity_type }} — {{ row.details }}</li>
+    {% else %}<li class="empty">No activity logged.</li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

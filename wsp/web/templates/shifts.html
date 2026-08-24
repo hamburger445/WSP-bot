@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Shifts{% endblock %}
+{% block heading %}Duty board{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>On duty now</h2>
+  <table>
+    <thead><tr><th>Member</th><th>Callsign</th><th>Rank</th><th>Status</th><th>Started</th></tr></thead>
+    <tbody>
+      {% for row in active %}
+      <tr>
+        <td><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a></td>
+        <td class="mono">{{ row.callsign or "—" }}</td>
+        <td>{{ row.rank_name or "—" }}</td>
+        <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>
+        <td>{{ row.start_time | when }}</td>
+      </tr>
+      {% else %}<tr><td colspan="5" class="empty">Nobody on duty.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+<div class="split" style="margin-top:20px">
+  <section class="panel">
+    <h2>Recent logs</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Member</th><th>Duration</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for row in recent %}
+        <tr>
+          <td class="mono">#{{ row.id }}</td>
+          <td><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a></td>
+          <td>{{ row.duration_seconds | duration }}</td>
+          <td>{{ row.status }}</td>
+        </tr>
+        {% else %}<tr><td colspan="4" class="empty">No shift history.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="panel">
+    <h2>All-time leaderboard</h2>
+    <ol class="timeline">
+      {% for row in board %}
+      <li>{{ row.discord_id }} — {{ row.total_seconds | duration }} ({{ row.shift_count }} shifts)</li>
+      {% else %}<li class="empty">No completed shifts.</li>{% endfor %}
+    </ol>
+  </section>
+</div>
+{% endblock %}
