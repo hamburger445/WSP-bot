@@ -1,4 +1,4 @@
-"""Promotion and demotion workflows with Discord role sync."""
+"""Promotion, demotion, and termination with Discord role sync."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from wsp.constants import COLOR_GOLD, COLOR_NAVY, PermissionLevel
-from wsp.embeds import add_fields, base_embed, error_embed, success_embed
+from wsp.constants import PermissionLevel
+from wsp.embeds import error_embed, success_embed
+from wsp.ops import change_rank, fire_member
 from wsp.permissions import has_level
-from wsp.utils import ensure_personnel, sync_rank_roles
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -31,7 +31,7 @@ class Promotions(commands.Cog):
         reason: str,
         authorizing_command: discord.Member,
     ) -> None:
-        await self._change_rank(interaction, member, rank, reason, authorizing_command, "promotion")
+        await self._rank(interaction, member, rank, reason, authorizing_command, "promotion")
 
     @app_commands.command(name="demote", description="Demote a WSP member and update Discord roles.")
     @has_level(PermissionLevel.COMMAND)
@@ -43,7 +43,23 @@ class Promotions(commands.Cog):
         reason: str,
         authorizing_command: discord.Member,
     ) -> None:
-        await self._change_rank(interaction, member, rank, reason, authorizing_command, "demotion")
+        await self._rank(interaction, member, rank, reason, authorizing_command, "demotion")
+
+    @app_commands.command(name="fire", description="Remove a member from WSP and strip department roles.")
+    @has_level(PermissionLevel.COMMAND)
+    async def fire(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        reason: str,
+        authorizing_command: discord.Member,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        message = await fire_member(self.bot, interaction.guild, member, reason, interaction.user, authorizing_command)
+        await interaction.followup.send(embed=success_embed("Member fired", message), ephemeral=True)
 
     @promote.autocomplete("rank")
     @demote.autocomplete("rank")
@@ -51,7 +67,7 @@ class Promotions(commands.Cog):
         ranks = await self.bot.db.list_ranks(interaction.guild_id or 0)
         return [app_commands.Choice(name=r["name"], value=r["name"]) for r in ranks if current.lower() in r["name"].lower()][:25]
 
-    async def _change_rank(
+    async def _rank(
         self,
         interaction: discord.Interaction,
         member: discord.Member,
@@ -60,72 +76,20 @@ class Promotions(commands.Cog):
         authorizing: discord.Member,
         action: str,
     ) -> None:
-        guild = interaction.guild
-        if guild is None:
+        if interaction.guild is None:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
-        new_rank = await self.bot.db.get_rank_by_name(guild.id, rank)
-        if new_rank is None:
-            await interaction.response.send_message(embed=error_embed("Unknown rank"), ephemeral=True)
+        error = await change_rank(
+            self.bot, interaction.guild, member, rank, reason, interaction.user, authorizing, action
+        )
+        if error:
+            await interaction.response.send_message(embed=error_embed("Invalid rank change", error), ephemeral=True)
             return
-        record = await ensure_personnel(self.bot, member)
-        from_rank = record["rank_name"]
-        from_pos = int(record["rank_position"] or 0)
-        to_pos = int(new_rank["position"])
-        if action == "promotion" and to_pos <= from_pos:
-            await interaction.response.send_message(
-                embed=error_embed("Invalid promotion", f"{member.display_name} is already at or above **{rank}**. Use `/demote` if needed."),
-                ephemeral=True,
-            )
-            return
-        if action == "demotion" and to_pos >= from_pos:
-            await interaction.response.send_message(
-                embed=error_embed("Invalid demotion", f"{member.display_name} is already at or below **{rank}**. Use `/promote` if needed."),
-                ephemeral=True,
-            )
-            return
-        await self.bot.db.update_personnel(record["id"], rank_id=new_rank["id"])
-        await self.bot.db.add_rank_history(
-            record["id"], action, from_rank, rank, reason, str(authorizing.id), str(interaction.user.id)
-        )
-        cfg = await self.bot.guild_config(guild.id)
-        await sync_rank_roles(member, rank, cfg)
-        await self.bot.db.audit(
-            guild.id,
-            action,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            target_id=member.id,
-            target_name=str(member),
-            details=f"{from_rank} → {rank} | auth {authorizing} | {reason}",
-        )
-        await self.bot.db.log_activity(guild.id, member.id, action, f"{from_rank} → {rank}")
-        color = COLOR_GOLD if action == "promotion" else COLOR_NAVY
-        title = "Promotion" if action == "promotion" else "Demotion"
-        public = base_embed(title, f"{member.mention}  •  {from_rank or 'Unassigned'} → **{rank}**", color=color)
-        add_fields(
-            public,
-            [
-                ("Reason", reason, False),
-                ("Processed by", interaction.user.mention, True),
-                ("Authorized by", authorizing.mention, True),
-            ],
-        )
-        dm = base_embed(
-            title,
-            f"Your rank is now **{rank}**.\n{from_rank or 'Unassigned'} → **{rank}**",
-            color=color,
-        )
-        dm.add_field(name="Reason", value=reason, inline=False)
-        dm_ok = await self.bot.try_dm(member, dm)
-        note = "" if dm_ok else " Could not DM the member (DMs may be closed)."
+        title = "Promotion recorded" if action == "promotion" else "Demotion recorded"
         await interaction.response.send_message(
-            embed=success_embed(f"{title} recorded", f"{member.mention} is now **{rank}**.{note}"),
+            embed=success_embed(title, f"{member.mention} is now **{rank}**."),
             ephemeral=True,
         )
-        await self.bot.notify(guild, "promotions", public)
-        await self.bot.notify(guild, "notifications", public)
-        await self.bot.notify(guild, "command_log", public)
 
 
 async def setup(bot: WSPBot) -> None:

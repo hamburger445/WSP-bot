@@ -4,19 +4,25 @@
 {% block content %}
 <section class="panel">
   <p class="meta">Resets Monday 00:00 in the department timezone. Missed quota notifies HR — it does not auto-punish.</p>
+  <form class="form-inline" method="post" action="/actions">
+    <input type="hidden" name="next" value="/quota">
+    <input type="hidden" name="action" value="quota_set">
+    <label class="field">Weekly minutes <input name="weekly_minutes" type="number" min="1" value="{{ weekly }}"></label>
+    <button class="gold-btn" type="submit">Save quota</button>
+  </form>
+</section>
+<section class="panel spaced">
   <table>
-    <thead><tr><th>Member</th><th>Type</th><th>Completed</th><th>Required</th><th>Supervision min</th><th>Status</th></tr></thead>
+    <thead><tr><th>Member</th><th>Completed</th><th>Required</th><th>Status</th></tr></thead>
     <tbody>
       {% for row in rows %}
       <tr>
         <td><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a></td>
-        <td>{{ row.quota_type }}</td>
         <td>{{ row.completed_minutes }}</td>
         <td>{{ row.required_minutes }}</td>
-        <td>{{ row.supervision_minutes }}</td>
         <td><span class="pill {{ row.status or 'pending' }}">{{ row.status or "in progress" }}</span></td>
       </tr>
-      {% else %}<tr><td colspan="6" class="empty">No quota rows this week.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="4" class="empty">No quota rows this week.</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>

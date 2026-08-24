@@ -1,4 +1,4 @@
-"""Command dashboard with section navigation."""
+"""Command dashboard with shift data reset."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import COLOR_GOLD, COLOR_NAVY, PermissionLevel
-from wsp.embeds import add_fields, base_embed, error_embed, format_duration, ts_rel
-from wsp.permissions import has_level
+from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts_rel
+from wsp.ops import reset_shift_data
+from wsp.permissions import has_level, resolve_level
 from wsp.utils import mention_or_id
 
 if TYPE_CHECKING:
@@ -21,7 +22,7 @@ class Dashboard(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="dashboard", description="Open the WSP command dashboard.")
+    @app_commands.command(name="dashboard", description="Open the WSP command dashboard. Reset shift data from here.")
     @has_level(PermissionLevel.HR)
     async def dashboard(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
@@ -59,11 +60,11 @@ async def overview_embed(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
             ("Active personnel", str(counts["active_personnel"]), True),
             ("On duty", str(counts["active_shifts"]), True),
             ("On LOA", str(counts["loa"]), True),
-            ("On probation", str(counts["probation"]), True),
-            ("Awaiting supervision", str(counts["awaiting_supervision"]), True),
+            ("Pending LOA", str(counts["pending_loa"]), True),
             ("Quota complete (week)", f"{complete}/{len(duty) or 0}", True),
         ],
     )
+    embed.set_footer(text="Use Reset shift data to clear the duty board and leaderboard.")
     return embed
 
 
@@ -71,6 +72,41 @@ class DashboardView(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=240)
         self.add_item(DashboardSelect())
+
+    @discord.ui.button(label="Reset shift data", style=discord.ButtonStyle.danger)
+    async def reset_shifts(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if await resolve_level(interaction) < PermissionLevel.HR:
+            await interaction.response.send_message(embed=error_embed("Restricted"), ephemeral=True)
+            return
+        await interaction.response.send_message(
+            embed=base_embed(
+                "Reset shift data?",
+                "This deletes every shift record and clears duty quota totals for this server. This cannot be undone.",
+            ),
+            view=ConfirmShiftResetView(),
+            ephemeral=True,
+        )
+
+
+class ConfirmShiftResetView(discord.ui.View):
+    def __init__(self) -> None:
+        super().__init__(timeout=60)
+
+    @discord.ui.button(label="Confirm reset", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        bot: WSPBot = interaction.client  # type: ignore[assignment]
+        deleted = await reset_shift_data(bot, interaction.guild, interaction.user)
+        await interaction.response.edit_message(
+            embed=success_embed("Shift data reset", f"Removed {deleted} shift record(s). Duty quota minutes were cleared."),
+            view=None,
+        )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(embed=base_embed("Cancelled", "Shift data was not changed."), view=None)
 
 
 class DashboardSelect(discord.ui.Select):
@@ -81,13 +117,8 @@ class DashboardSelect(discord.ui.Select):
                 discord.SelectOption(label="Overview", value="overview"),
                 discord.SelectOption(label="Active shifts", value="shifts"),
                 discord.SelectOption(label="Personnel on LOA", value="loa"),
-                discord.SelectOption(label="Probationary personnel", value="probation"),
-                discord.SelectOption(label="Awaiting supervision", value="supervision"),
                 discord.SelectOption(label="Quota completion", value="quota"),
                 discord.SelectOption(label="Recent promotions", value="promotions"),
-                discord.SelectOption(label="Recent discipline", value="discipline"),
-                discord.SelectOption(label="Recent resignations", value="resignations"),
-                discord.SelectOption(label="Training activity", value="training"),
             ],
         )
 
@@ -97,8 +128,7 @@ class DashboardSelect(discord.ui.Select):
         if guild is None:
             await interaction.response.send_message(embed=error_embed("Unavailable"), ephemeral=True)
             return
-        key = self.values[0]
-        embed = await section_embed(bot, guild, key)
+        embed = await section_embed(bot, guild, self.values[0])
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
@@ -125,20 +155,6 @@ async def section_embed(bot: WSPBot, guild: discord.Guild, key: str) -> discord.
             for r in current
         ) or "None."
         return embed
-    if key == "probation":
-        rows = await bot.db.list_active_probations(guild.id)
-        embed = base_embed("Probationary personnel")
-        embed.description = "\n".join(
-            f"{mention_or_id(guild, r['discord_id'])} `{r['status']}` ends {ts_rel(r['expected_end'])}"
-            for r in rows
-        ) or "None."
-        return embed
-    if key == "supervision":
-        rows = await bot.db.list_personnel(guild.id, "active")
-        waiting = [r for r in rows if r["supervision_status"] == "required"]
-        embed = base_embed("Awaiting supervision")
-        embed.description = "\n".join(f"{mention_or_id(guild, r['discord_id'])} **{r['rank_name'] or ''}**" for r in waiting) or "None."
-        return embed
     if key == "quota":
         cfg = await bot.guild_config(guild.id)
         week = bot.db.week_start_ts(cfg.get("timezone") or "America/Chicago")
@@ -150,28 +166,9 @@ async def section_embed(bot: WSPBot, guild: discord.Guild, key: str) -> discord.
             for r in rows[:20]
         ) or "No quota rows this week."
         return embed
-    if key == "promotions":
-        rows = await bot.db.list_audit(guild.id, 12, "promotion")
-        embed = base_embed("Recent promotions")
-        embed.description = "\n".join(f"{ts_rel(r['created_at'])} {r['target_name'] or r['target_id']} — {r['details']}" for r in rows) or "None."
-        return embed
-    if key == "discipline":
-        rows = await bot.db.list_discipline(guild.id)
-        embed = base_embed("Recent disciplinary actions")
-        embed.description = "\n".join(
-            f"{ts_rel(r['created_at'])} {mention_or_id(guild, r['discord_id'])} **{r['action']}**"
-            for r in rows[:12]
-        ) or "None."
-        return embed
-    if key == "resignations":
-        rows = await bot.db.list_audit(guild.id, 12, "ticket_close")
-        personnel = await bot.db.list_personnel(guild.id, "resigned")
-        embed = base_embed("Recent resignations")
-        embed.description = "\n".join(f"{mention_or_id(guild, r['discord_id'])} {ts_rel(r['updated_at'])}" for r in personnel[:12]) or "None on roster."
-        return embed
-    rows = await bot.db.list_audit(guild.id, 15, "training")
-    embed = base_embed("Recent training activity")
-    embed.description = "\n".join(f"{ts_rel(r['created_at'])} {r['target_name'] or ''} — {r['details']}" for r in rows) or "None."
+    rows = await bot.db.list_audit(guild.id, 12, "promotion")
+    embed = base_embed("Recent promotions")
+    embed.description = "\n".join(f"{ts_rel(r['created_at'])} {r['target_name'] or r['target_id']} — {r['details']}" for r in rows) or "None."
     return embed
 
 

@@ -1,4 +1,4 @@
-"""Personnel records, notes, transfers, status changes, and training."""
+"""Personnel records, notes, transfers, and status changes."""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import COLOR_NAVY, PermissionLevel
-from wsp.db import now_ts
-from wsp.embeds import add_fields, base_embed, error_embed, success_embed, ts
+from wsp.embeds import base_embed, error_embed, success_embed, ts
 from wsp.permissions import has_level
-from wsp.utils import ensure_personnel, mention_or_id, parse_date, sync_rank_roles
+from wsp.utils import ensure_personnel, sync_rank_roles
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -123,7 +122,7 @@ class Personnel(commands.Cog):
             target_id=member.id, target_name=str(member), details=reason,
         )
         await interaction.response.send_message(embed=success_embed("Member suspended", f"{member.mention}\n{reason}"), ephemeral=True)
-        await self.bot.notify(interaction.guild, "discipline", base_embed("Suspension", f"{member.mention} — {reason}"))
+        await self.bot.notify(interaction.guild, "hr_log", base_embed("Suspension", f"{member.mention} — {reason}"))
 
     @personnel.command(name="remove", description="Remove a member from the WSP roster.")
     @has_level(PermissionLevel.COMMAND)
@@ -137,7 +136,7 @@ class Personnel(commands.Cog):
             target_id=member.id, target_name=str(member), details=reason,
         )
         await interaction.response.send_message(embed=success_embed("Member removed", f"{member.mention} is no longer on the roster."), ephemeral=True)
-        await self.bot.notify(interaction.guild, "discipline", base_embed("Roster removal", f"{member.mention} — {reason}"))
+        await self.bot.notify(interaction.guild, "hr_log", base_embed("Roster removal", f"{member.mention} — {reason}"))
         await self.bot.notify(interaction.guild, "notifications", base_embed("Roster removal", f"{member.mention} — {reason}"))
 
     @personnel.command(name="reinstate", description="Return a suspended or removed member to active status.")
@@ -173,62 +172,6 @@ class Personnel(commands.Cog):
             for row in rows[:15]:
                 lines.append(f"{ts(row['created_at'])} **{row['action']}** {row['from_rank'] or '—'} → {row['to_rank'] or '—'}\n{row['reason'] or ''}")
             embed.description = "\n\n".join(lines)[:4000]
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    training = app_commands.Group(name="training", description="Training records")
-
-    @training.command(name="set", description="Update a training module for a member.")
-    @has_level(PermissionLevel.HR)
-    @app_commands.describe(status="incomplete, complete, waived")
-    async def training_set(
-        self, interaction: discord.Interaction, member: discord.Member, module: str, status: str, notes: str | None = None
-    ) -> None:
-        if not interaction.guild:
-            return
-        await ensure_personnel(self.bot, member)
-        await self.bot.db.upsert_training(interaction.guild.id, member.id, module, status, interaction.user.id, notes)
-        record = await self.bot.db.get_personnel(interaction.guild.id, member.id)
-        cfg = await self.bot.guild_config(interaction.guild.id)
-        required = cfg.get("training", "required_modules") or []
-        records = await self.bot.db.list_training(interaction.guild.id, member.id)
-        done = {r["module"] for r in records if r["status"] in {"complete", "waived"}}
-        if required and all(m in done for m in required) and record:
-            await self.bot.db.update_personnel(record["id"], training_status="complete")
-            await self.bot.notify(
-                interaction.guild,
-                "notifications",
-                success_embed("Training complete", f"{member.mention} has completed required training."),
-            )
-        await self.bot.db.audit(
-            interaction.guild.id, "training", actor_id=interaction.user.id, actor_name=str(interaction.user),
-            target_id=member.id, target_name=str(member), details=f"{module} = {status}",
-        )
-        await interaction.response.send_message(embed=success_embed("Training updated", f"**{module}** → `{status}` for {member.mention}."), ephemeral=True)
-
-    @training_set.autocomplete("module")
-    async def module_ac(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-        cfg = await self.bot.guild_config(interaction.guild_id or 0)
-        modules = cfg.get("training", "required_modules") or []
-        return [app_commands.Choice(name=m, value=m) for m in modules if current.lower() in m.lower()][:25]
-
-    @training.command(name="view", description="View training records.")
-    @has_level(PermissionLevel.TROOPER)
-    async def training_view(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            return
-        from wsp.permissions import resolve_level
-
-        target = member or interaction.user
-        if member and member.id != interaction.user.id:
-            if await resolve_level(interaction) < PermissionLevel.HR:
-                await interaction.response.send_message(embed=error_embed("Restricted"), ephemeral=True)
-                return
-        rows = await self.bot.db.list_training(interaction.guild.id, target.id)
-        embed = base_embed(f"Training  •  {target}")
-        if not rows:
-            embed.description = "No training records on file."
-        else:
-            embed.description = "\n".join(f"**{r['module']}** — `{r['status']}`" for r in rows)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

@@ -3,11 +3,27 @@
 {% block heading %}Personnel roster{% endblock %}
 {% block content %}
 <section class="panel">
+  <h2>Add to roster</h2>
+  <form class="form-grid form-inline" method="post" action="/actions">
+    <input type="hidden" name="next" value="/personnel">
+    <input type="hidden" name="action" value="add">
+    <label class="field">Discord ID <input name="discord_id" required inputmode="numeric"></label>
+    <label class="field">Rank
+      <select name="rank" required>
+        {% for r in ranks %}<option value="{{ r.name }}">{{ r.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">Position <input name="position" placeholder="Patrol"></label>
+    <label class="field">Callsign <input name="callsign"></label>
+    <button class="gold-btn" type="submit">Add</button>
+  </form>
+</section>
+<section class="panel spaced">
   <div class="toolbar">
     <input class="search" data-filter-table type="search" placeholder="Filter roster by name, rank, or ID…">
   </div>
   <table>
-    <thead><tr><th>Member</th><th>Rank</th><th>Position</th><th>Status</th><th>Training</th><th>Probation</th></tr></thead>
+    <thead><tr><th>Member</th><th>Rank</th><th>Position</th><th>Status</th></tr></thead>
     <tbody>
       {% for row in rows %}
       <tr>
@@ -15,11 +31,9 @@
         <td>{{ row.rank_name or "—" }}</td>
         <td>{{ row.position or "Patrol" }}</td>
         <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>
-        <td>{{ row.training_status }}</td>
-        <td>{{ row.probation_status }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="empty">No personnel records yet. Use /personnel add in Discord.</td></tr>
+      <tr><td colspan="4" class="empty">No personnel records yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

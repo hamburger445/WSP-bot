@@ -33,7 +33,6 @@ class ScheduledTasks(commands.Cog):
     async def hourly(self) -> None:
         for guild in self.bot.guilds:
             try:
-                await self._probation_notices(guild.id)
                 await self._quota_notices(guild.id)
                 await self._expire_loa(guild.id)
             except Exception:
@@ -67,27 +66,6 @@ class ScheduledTasks(commands.Cog):
     @github_sync.before_loop
     async def before_github_sync(self) -> None:
         await self.bot.wait_until_ready()
-
-    async def _probation_notices(self, guild_id: int) -> None:
-        guild = self.bot.get_guild(guild_id)
-        if guild is None:
-            return
-        cfg = await self.bot.guild_config(guild_id)
-        hours = int(cfg.get("probation", "notify_hours_before") or 48)
-        threshold = now_ts() + hours * 3600
-        rows = await self.bot.db.list_active_probations(guild_id)
-        for row in rows:
-            if row["notified_ending"]:
-                continue
-            if int(row["expected_end"]) <= threshold:
-                await self.bot.db.update_probation(row["id"], notified_ending=1)
-                embed = warning_embed(
-                    "Probation ending soon",
-                    f"{mention_or_id(guild, row['discord_id'])} reaches expected completion <t:{row['expected_end']}:R>.",
-                )
-                await self.bot.notify(guild, "probation", embed)
-                await self.bot.notify(guild, "notifications", embed)
-                await self.bot.notify(guild, "hr_log", embed)
 
     async def _quota_notices(self, guild_id: int) -> None:
         guild = self.bot.get_guild(guild_id)

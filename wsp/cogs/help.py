@@ -17,7 +17,8 @@ if TYPE_CHECKING:
 
 MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
     ("Duty", "Shifts and quota", [
-        "`/shift menu` — public duty board plus your shift controls",
+        "`/shift menu` — public start, pause, resume, and end buttons",
+        "`/shift data` — public duty board and leaderboard",
         "`/shift start` `/shift status` `/shift leaderboard` `/shift history`",
         "`/quota view` `/quota leaderboard`",
         "`/profile` — your personnel file",
@@ -27,12 +28,7 @@ MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/loa request` — dates as `YYYY-MM-DD` (example: `2026-09-01`)",
         "You will be notified when your request is reviewed.",
     ]),
-    ("Records", "Your file and appeals", [
-        "`/profile` — personnel file, including your disciplinary records",
-        "`/appeal` — appeal a disciplinary action using the record number",
-    ]),
-    ("Support", "Tickets and this directory", [
-        "Open a ticket from the posted ticket panel.",
+    ("Help", "Command directory", [
         "`/help` — this directory",
     ]),
 ]
@@ -40,21 +36,13 @@ MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
 STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
     ("Personnel", "Roster and rank", [
         "`/personnel add` `note` `transfer` `suspend` `remove` `reinstate` `history`",
-        "`/promote` `/demote`",
-        "`/training set` `/training view`",
-        "`/vehicle assign` `/vehicle release` `/vehicle list`",
+        "`/promote` `/demote` `/fire`",
         "`/shift correct` `/quota admin`",
     ]),
-    ("Training pipeline", "Fast-pass through probation", [
-        "`/fastpass start` `review` `approve` `deny`",
-        "`/supervision start` `complete` `review` `history`",
-        "`/probation start` `view` `review` `extend` `complete` `clear`",
-    ]),
-    ("HR / Command", "Leave, discipline, tickets", [
+    ("HR / Command", "Leave and logs", [
         "`/loa approve` `/loa deny` `/loa active`",
-        "`/discipline add` `view` `remove` `appeals` `uphold` `overturn`",
-        "`/ticket panel` `close` `list`",
-        "`/dashboard` `/audit`",
+        "`/dashboard` — includes **Reset shift data**",
+        "`/audit`",
     ]),
     ("Setup", "Owners and command staff", [
         "`/setupserver` `/verifysetup` `/config` `/sync` `/resetserver`",

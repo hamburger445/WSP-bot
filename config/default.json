@@ -29,56 +29,23 @@
     "Superintendent": ""
   },
   "channels": {
-    "applications": "",
     "promotions": "",
-    "discipline": "",
     "loa": "",
     "quota": "",
     "shift_log": "",
     "notifications": "",
     "hr_log": "",
     "command_log": "",
-    "audit_log": "",
-    "fastpass": "",
-    "supervision": "",
-    "probation": "",
-    "tickets_log": "",
-    "ticket_panel": "",
-    "resignations": ""
+    "audit_log": ""
   },
   "categories": {
-    "tickets": "",
     "command": "",
     "logs": ""
   },
   "quota": {
     "weekly_minutes": 180,
-    "hr_supervision_minutes": 30,
     "reminder_hours_before_reset": 24,
     "approaching_percent": 50
-  },
-  "probation": {
-    "duration_days": 14,
-    "notify_hours_before": 48
-  },
-  "training": {
-    "required_modules": [
-      "Traffic Stops",
-      "Radio Communications",
-      "Report Writing",
-      "Use of Force",
-      "Pursuit Policy"
-    ]
-  },
-  "vehicles": {
-    "enabled": true,
-    "fleet": [
-      "Marked Tahoe",
-      "Marked Charger",
-      "Unmarked Charger",
-      "Motorcycle",
-      "Slicktop Explorer"
-    ]
   },
   "loa": {
     "min_hours_notice": 12,

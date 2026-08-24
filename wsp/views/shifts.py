@@ -16,18 +16,10 @@ if TYPE_CHECKING:
 
 
 class ShiftMenuView(discord.ui.View):
-    """Public duty board controls. Shift start/pause/end live on ShiftActionView."""
+    """Public duty board. Personal start/pause/end live on /shift menu."""
 
     def __init__(self) -> None:
         super().__init__(timeout=None)
-
-    @discord.ui.button(label="My shift", style=discord.ButtonStyle.success, custom_id="wsp:shift:mine")
-    async def mine(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        await _send_personal_controls(interaction)
-
-    @discord.ui.button(label="My history", style=discord.ButtonStyle.secondary, custom_id="wsp:shift:history")
-    async def history(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        await _history(interaction)
 
     @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.secondary, custom_id="wsp:shift:board")
     async def board(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
@@ -79,11 +71,19 @@ class ShiftActionView(discord.ui.View):
         await _end_shift(interaction)
 
 
+async def build_shift_controls() -> discord.Embed:
+    return base_embed(
+        "Shift controls",
+        "Use these buttons to start, pause, resume, or end **your** shift. "
+        "Anyone on duty can press them. Confirmations stay private.",
+        color=COLOR_NAVY,
+    )
+
+
 async def build_duty_board(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
     embed = base_embed(
         "Duty board",
-        "Use **My shift** for your start / pause / end controls. "
-        "Confirmations stay private. Everyone can see who is on duty and the leaderboard.",
+        "Who is on duty and the all-time leaderboard. Shift buttons are on `/shift menu`.",
         color=COLOR_NAVY,
     )
     active = await bot.db.list_active_shifts(guild.id)

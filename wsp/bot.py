@@ -21,16 +21,10 @@ COG_MODULES = [
     "wsp.cogs.setup",
     "wsp.cogs.personnel",
     "wsp.cogs.profile",
-    "wsp.cogs.fastpass",
-    "wsp.cogs.supervision",
-    "wsp.cogs.probation",
     "wsp.cogs.shifts",
     "wsp.cogs.quota",
     "wsp.cogs.loa",
     "wsp.cogs.promotions",
-    "wsp.cogs.discipline",
-    "wsp.cogs.tickets",
-    "wsp.cogs.vehicles",
     "wsp.cogs.dashboard",
     "wsp.cogs.help",
     "wsp.cogs.tasks",
@@ -56,16 +50,11 @@ class WSPBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         from wsp.views.shifts import ShiftActionView, ShiftMenuView
-        from wsp.views.tickets import TicketControlsView, TicketPanelView
         from wsp.cogs.loa import DenyLOAButton, ApproveLOAButton
-        from wsp.views.discipline import AppealOpenButton, AppealOverturnButton, AppealUpholdButton
 
-        self.add_view(TicketPanelView())
-        self.add_view(TicketControlsView())
         self.add_view(ShiftMenuView())
         self.add_view(ShiftActionView(lock_buttons=False))
         self.add_dynamic_items(ApproveLOAButton, DenyLOAButton)
-        self.add_dynamic_items(AppealOpenButton, AppealUpholdButton, AppealOverturnButton)
         self.tree.on_error = self.on_app_command_error
 
         for module in COG_MODULES:

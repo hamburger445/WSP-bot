@@ -5,13 +5,54 @@
 <p class="meta">{{ record.rank_name or "Unassigned" }} · {{ record.position or "Patrol" }} · {{ record.callsign or "no callsign" }}</p>
 <div class="stats">
   <article class="stat"><span>Status</span><strong>{{ record.status }}</strong></article>
-  <article class="stat"><span>Training</span><strong>{{ record.training_status }}</strong></article>
-  <article class="stat"><span>Supervision</span><strong>{{ record.supervision_status }}</strong></article>
-  <article class="stat"><span>Probation</span><strong>{{ record.probation_status }}</strong></article>
   <article class="stat"><span>Joined</span><strong style="font-size:18px">{{ record.join_date | when }}</strong></article>
   <article class="stat"><span>Discord ID</span><strong style="font-size:16px" class="mono">{{ record.discord_id }}</strong></article>
 </div>
-<div class="split">
+
+<section class="panel">
+  <h2>Controls</h2>
+  <div class="split">
+    <form class="form-grid" method="post" action="/actions">
+      <input type="hidden" name="next" value="/personnel/{{ record.discord_id }}">
+      <input type="hidden" name="discord_id" value="{{ record.discord_id }}">
+      <label class="field">Rank action
+        <select name="action">
+          <option value="promote">Promote</option>
+          <option value="demote">Demote</option>
+          <option value="fire">Fire</option>
+          <option value="suspend">Suspend</option>
+          <option value="remove">Remove roster</option>
+          <option value="reinstate">Reinstate</option>
+          <option value="end_shift">End shift</option>
+        </select>
+      </label>
+      <label class="field">Rank
+        <select name="rank">
+          {% for r in ranks %}<option value="{{ r.name }}" {% if r.name == record.rank_name %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">Reason <input name="reason" required></label>
+      <button class="gold-btn" type="submit">Apply</button>
+    </form>
+    <form class="form-grid" method="post" action="/actions">
+      <input type="hidden" name="next" value="/personnel/{{ record.discord_id }}">
+      <input type="hidden" name="discord_id" value="{{ record.discord_id }}">
+      <input type="hidden" name="action" value="note">
+      <label class="field">Note type
+        <select name="note_type">
+          <option value="hr">HR</option>
+          <option value="command">Command</option>
+        </select>
+      </label>
+      <label class="field">Note <input name="content" required></label>
+      <label class="field">Position <input name="position" value="{{ record.position or '' }}"></label>
+      <button class="gold-btn" type="submit" name="action" value="transfer">Save position</button>
+      <button class="gold-btn" type="submit">Add note</button>
+    </form>
+  </div>
+</section>
+
+<div class="split spaced">
   <section class="panel">
     <h2>Rank history</h2>
     <ul class="timeline">
@@ -27,32 +68,12 @@
     </ul>
   </section>
   <section class="panel">
-    <h2>Training</h2>
+    <h2>Activity</h2>
     <ul class="timeline">
-      {% for row in training %}
-      <li><span>{{ row.status }}</span>{{ row.module }}</li>
-      {% else %}<li class="empty">No modules.</li>{% endfor %}
-    </ul>
-    <h2 class="spaced">Discipline</h2>
-    <ul class="timeline">
-      {% for row in discipline %}
-      <li><span>{{ row.created_at | when }}</span>{{ row.action }} — {{ row.reason }}</li>
-      {% else %}<li class="empty">Clean file.</li>{% endfor %}
-    </ul>
-    <h2 class="spaced">Vehicles</h2>
-    <ul class="timeline">
-      {% for row in vehicles %}
-      <li><span>{{ row.status }}</span>{{ row.vehicle_name }} {{ row.plate or "" }}</li>
-      {% else %}<li class="empty">None assigned.</li>{% endfor %}
+      {% for row in activity %}
+      <li><span>{{ row.created_at | when }}</span>{{ row.activity_type }} — {{ row.details }}</li>
+      {% else %}<li class="empty">No activity logged.</li>{% endfor %}
     </ul>
   </section>
 </div>
-<section class="panel" style="margin-top:20px">
-  <h2>Activity</h2>
-  <ul class="timeline">
-    {% for row in activity %}
-    <li><span>{{ row.created_at | when }}</span>{{ row.activity_type }} — {{ row.details }}</li>
-    {% else %}<li class="empty">No activity logged.</li>{% endfor %}
-  </ul>
-</section>
 {% endblock %}

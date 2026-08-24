@@ -1,46 +1,59 @@
 {% extends "base.html" %}
 {% block title %}Overview{% endblock %}
-{% block heading %}Statewide overview{% endblock %}
+{% block heading %}Command center{% endblock %}
 {% block content %}
 <section class="stats">
-  <article class="stat">
-    <span>Active personnel</span>
-    <strong>{{ counts.active_personnel }}</strong>
-  </article>
-  <article class="stat">
-    <span>On duty</span>
-    <strong>{{ counts.active_shifts }}</strong>
-  </article>
-  <article class="stat">
-    <span>On LOA</span>
-    <strong>{{ counts.loa }}</strong>
-  </article>
-  <article class="stat">
-    <span>Probation</span>
-    <strong>{{ counts.probation }}</strong>
-  </article>
-  <article class="stat">
-    <span>Awaiting supervision</span>
-    <strong>{{ counts.awaiting_supervision }}</strong>
-  </article>
-  <article class="stat">
-    <span>Quota this week</span>
-    <strong>{{ quota_complete }}/{{ quota_total }}</strong>
-  </article>
+  <article class="stat"><span>Active personnel</span><strong>{{ counts.active_personnel }}</strong></article>
+  <article class="stat"><span>On duty</span><strong>{{ counts.active_shifts }}</strong></article>
+  <article class="stat"><span>On LOA</span><strong>{{ counts.loa }}</strong></article>
+  <article class="stat"><span>Pending LOA</span><strong>{{ counts.pending_loa }}</strong></article>
+  <article class="stat"><span>Quota this week</span><strong>{{ quota_complete }}/{{ quota_total }}</strong></article>
 </section>
 
 <div class="split">
   <section class="panel">
+    <h2>Run a command</h2>
+    <p class="meta">These actions talk to the live Discord bot: ranks, roster, shifts, and leave.</p>
+    <form class="form-grid" method="post" action="/actions" onsubmit="if (this.querySelector('[name=action]').value === 'reset_shifts') return confirm('Delete every shift record and clear duty quota totals?');">
+      <input type="hidden" name="next" value="/">
+      <label class="field">Action
+        <select name="action" required>
+          <option value="add">Add personnel</option>
+          <option value="promote">Promote</option>
+          <option value="demote">Demote</option>
+          <option value="fire">Fire (strip WSP roles)</option>
+          <option value="suspend">Suspend</option>
+          <option value="remove">Remove from roster</option>
+          <option value="reinstate">Reinstate</option>
+          <option value="end_shift">End their active shift</option>
+          <option value="reset_shifts">Reset all shift data</option>
+        </select>
+      </label>
+      <label class="field">Discord ID
+        <input name="discord_id" inputmode="numeric" placeholder="1391201462259810354">
+      </label>
+      <label class="field">Rank
+        <select name="rank">
+          <option value="">—</option>
+          {% for r in ranks %}<option value="{{ r.name }}">{{ r.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">Reason / note
+        <input name="reason" placeholder="Required for fire, suspend, remove">
+      </label>
+      <button class="gold-btn" type="submit">Apply</button>
+    </form>
+  </section>
+  <section class="panel">
     <h2>Active shifts</h2>
     {% if shifts %}
     <table>
-      <thead><tr><th>Member</th><th>Callsign</th><th>Rank</th><th>Status</th><th>Elapsed</th></tr></thead>
+      <thead><tr><th>Member</th><th>Callsign</th><th>Status</th><th>Elapsed</th></tr></thead>
       <tbody>
         {% for row in shifts %}
         <tr>
           <td><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a></td>
           <td class="mono">{{ row.callsign or "—" }}</td>
-          <td>{{ row.rank_name or "—" }}</td>
           <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>
           <td class="mono">{{ row.duration_seconds | duration if row.duration_seconds else "live" }}</td>
         </tr>
@@ -50,9 +63,7 @@
     {% else %}
     <p class="empty">No troopers currently on duty.</p>
     {% endif %}
-  </section>
-  <section class="panel">
-    <h2>Recent promotions</h2>
+    <h2 class="spaced">Recent promotions</h2>
     {% if promotions %}
     <ul class="timeline">
       {% for row in promotions %}
@@ -61,16 +72,6 @@
     </ul>
     {% else %}
     <p class="empty">No recent promotions.</p>
-    {% endif %}
-    <h2 class="spaced">Recent discipline</h2>
-    {% if discipline %}
-    <ul class="timeline">
-      {% for row in discipline %}
-      <li><span>{{ row.created_at | when }}</span><a href="/personnel/{{ row.discord_id }}">{{ row.discord_id }}</a> — {{ row.action }}</li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="empty">No recent actions.</p>
     {% endif %}
   </section>
 </div>

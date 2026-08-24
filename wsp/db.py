@@ -769,6 +769,21 @@ class Database:
             (str(guild_id),),
         )
 
+    async def reset_shifts(self, guild_id: int) -> int:
+        gid = str(guild_id)
+        cur = await self.execute("DELETE FROM shifts WHERE guild_id = ?", (gid,))
+        weeks = await self.fetchall("SELECT id FROM quota_weeks WHERE guild_id = ?", (gid,))
+        for week in weeks:
+            await self.execute(
+                """
+                UPDATE quota_records
+                SET completed_minutes = 0, status = NULL, notified = 0
+                WHERE week_id = ? AND quota_type = 'duty'
+                """,
+                (week["id"],),
+            )
+        return int(cur.rowcount or 0)
+
     async def shift_totals(self, guild_id: int, discord_id: int) -> aiosqlite.Row | None:
         return await self.fetchone(
             """
@@ -1120,18 +1135,13 @@ class Database:
             "SELECT COUNT(*) AS c FROM loa_requests WHERE guild_id = ? AND status = 'approved' AND start_date <= ? AND end_date >= ?",
             (gid, now_ts(), now_ts()),
         )
-        probation = await self.fetchone(
-            "SELECT COUNT(*) AS c FROM personnel WHERE guild_id = ? AND probation_status IN ('active', 'extended')",
-            (gid,),
-        )
-        awaiting = await self.fetchone(
-            "SELECT COUNT(*) AS c FROM personnel WHERE guild_id = ? AND supervision_status = 'required'",
+        pending = await self.fetchone(
+            "SELECT COUNT(*) AS c FROM loa_requests WHERE guild_id = ? AND status = 'pending'",
             (gid,),
         )
         return {
             "active_personnel": int(active["c"]) if active else 0,
             "active_shifts": int(shifts["c"]) if shifts else 0,
             "loa": int(loa["c"]) if loa else 0,
-            "probation": int(probation["c"]) if probation else 0,
-            "awaiting_supervision": int(awaiting["c"]) if awaiting else 0,
+            "pending_loa": int(pending["c"]) if pending else 0,
         }

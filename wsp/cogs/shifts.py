@@ -13,7 +13,7 @@ from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.permissions import has_level
 from wsp.utils import current_shift_seconds, mention_or_id
-from wsp.views.shifts import ShiftActionView, ShiftMenuView, build_duty_board, build_leaderboard, build_personal_shift, start_shift_for
+from wsp.views.shifts import ShiftActionView, ShiftMenuView, build_duty_board, build_leaderboard, build_shift_controls, start_shift_for
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -25,17 +25,21 @@ class Shifts(commands.Cog):
 
     shift = app_commands.Group(name="shift", description="Duty shift management")
 
-    @shift.command(name="menu", description="Post the public duty board and leaderboard.")
+    @shift.command(name="menu", description="Post public start, pause, resume, and end buttons.")
     async def menu(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        embed = await build_shift_controls()
+        await interaction.response.send_message(embed=embed, view=ShiftActionView(lock_buttons=False))
+
+    @shift.command(name="data", description="Post the public duty board and leaderboard.")
+    async def data(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
         embed = await build_duty_board(self.bot, interaction.guild)
         await interaction.response.send_message(embed=embed, view=ShiftMenuView())
-        row = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
-        status = row["status"] if row else None
-        personal = await build_personal_shift(self.bot, interaction.guild, interaction.user, row)
-        await interaction.followup.send(embed=personal, view=ShiftActionView(status), ephemeral=True)
 
     @shift.command(name="status", description="Show who is currently on duty.")
     async def status(self, interaction: discord.Interaction) -> None:

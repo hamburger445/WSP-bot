@@ -1,4 +1,4 @@
-"""FastAPI command-center dashboard sharing the bot database."""
+"""FastAPI command center — owner-only controls for the live bot."""
 
 from __future__ import annotations
 
@@ -7,8 +7,10 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
-from fastapi import FastAPI, Request
+import discord
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,6 +19,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from wsp.constants import LEVEL_LABELS, PermissionLevel
 from wsp.db import now_ts
 from wsp.embeds import format_duration
+from wsp.ops import change_rank, decide_loa_record, end_active_shift, fire_member, reset_shift_data, set_status
+from wsp.utils import ensure_personnel, sync_rank_roles
 from wsp.web import auth
 
 if TYPE_CHECKING:
@@ -43,6 +47,16 @@ templates.env.filters["when"] = _fmt_dt
 templates.env.filters["duration"] = _fmt_dur
 
 
+class _Actor:
+    def __init__(self, user: dict[str, Any]) -> None:
+        self.id = int(user["id"])
+        self.name = str(user.get("username") or self.id)
+        self.mention = f"<@{self.id}>"
+
+    def __str__(self) -> str:
+        return self.name
+
+
 def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
     app = FastAPI(title="WSP Command Center", docs_url=None, redoc_url=None)
     app.add_middleware(
@@ -59,8 +73,17 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
     def guild_id() -> int:
         return settings.guild_id or (bot.guilds[0].id if bot.guilds else 0)
 
+    def guild() -> discord.Guild | None:
+        gid = guild_id()
+        return bot.get_guild(gid) if gid else None
+
     def current_user(request: Request) -> dict[str, Any] | None:
         return auth.session_user(request)
+
+    def is_owner(user: dict[str, Any] | None) -> bool:
+        if not user:
+            return False
+        return int(user.get("id", 0)) in settings.owner_ids or int(user.get("level", 0)) >= int(PermissionLevel.OWNER)
 
     def public_origin(request: Request) -> str:
         proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "http").split(",")[0].strip()
@@ -82,28 +105,44 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
         payload = {
             "request": request,
             "user": user,
-            "level_label": LEVEL_LABELS.get(PermissionLevel(int(user["level"])), "Trooper") if user else None,
+            "level_label": LEVEL_LABELS.get(PermissionLevel(int(user["level"])), "Owner") if user else None,
             "department": "Wisconsin State Patrol",
             "community": "Lakeville Roleplay",
             "bot_ready": bot.is_ready(),
             "nav": NAV,
             "nav_groups": NAV_GROUPS,
+            "notice": request.query_params.get("ok"),
+            "error": request.query_params.get("err"),
+            "denied": request.query_params.get("denied"),
         }
         payload.update(extra)
         return payload
 
     def render(name: str, context: dict[str, Any], status_code: int = 200) -> HTMLResponse:
-        return templates.TemplateResponse(
-            context["request"], name, context, status_code=status_code
-        )
+        return templates.TemplateResponse(context["request"], name, context, status_code=status_code)
 
-    def gated(request: Request, minimum: PermissionLevel) -> RedirectResponse | None:
+    def gated(request: Request) -> RedirectResponse | None:
         user = current_user(request)
         if not user:
             return RedirectResponse("/login", status_code=302)
-        if int(user.get("level", 0)) < int(minimum):
-            return RedirectResponse("/?denied=1", status_code=302)
+        if not is_owner(user):
+            request.session.clear()
+            return RedirectResponse("/login?error=owner", status_code=302)
         return None
+
+    def bounce_to(path: str, ok: str | None = None, err: str | None = None) -> RedirectResponse:
+        if ok:
+            return RedirectResponse(f"{path}?ok={quote(ok)}", status_code=303)
+        if err:
+            return RedirectResponse(f"{path}?err={quote(err)}", status_code=303)
+        return RedirectResponse(path, status_code=303)
+
+    async def member_for(discord_id: int) -> discord.Member | None:
+        g = guild()
+        if g is None:
+            return None
+        found = await bot.fetch_guild_user(g, discord_id)
+        return found if isinstance(found, discord.Member) else None
 
     @app.api_route("/health", methods=["GET", "HEAD"], response_model=None)
     async def health(request: Request) -> Any:
@@ -129,7 +168,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
 
     @app.get("/login", response_class=HTMLResponse)
     async def login(request: Request) -> Any:
-        if current_user(request):
+        if current_user(request) and is_owner(current_user(request)):
             return RedirectResponse("/", status_code=302)
         ready = bool(settings.discord_client_id and settings.discord_client_secret)
         return render(
@@ -150,7 +189,6 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
         callback = redirect_uri(request)
         request.session["oauth_state"] = state
         request.session["oauth_redirect"] = callback
-        log.info("Discord OAuth redirect_uri=%s", callback)
         return RedirectResponse(auth.login_url(settings.discord_client_id, callback, state), status_code=302)
 
     @app.get("/auth/callback")
@@ -170,42 +208,15 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return RedirectResponse("/login?error=oauth", status_code=302)
 
         user_id = int(profile["id"])
-        gid = guild_id()
-        level = PermissionLevel.TROOPER
-        if user_id in settings.owner_ids:
-            level = PermissionLevel.OWNER
-        elif gid:
-            try:
-                member = await auth.fetch_member(token["access_token"], gid, user_id)
-            except Exception:
-                member = None
-            if member is None and user_id not in settings.owner_ids:
-                return RedirectResponse("/login?error=guild", status_code=302)
-            if member and level < PermissionLevel.OWNER:
-                cfg = await bot.guild_config(gid)
-                role_ids = {int(r) for r in member.get("roles", []) if str(r).isdigit()}
-                mapping = [
-                    (cfg.role_id("superintendent"), PermissionLevel.SUPERINTENDENT),
-                    (cfg.role_id("command"), PermissionLevel.COMMAND),
-                    (cfg.role_id("hr"), PermissionLevel.HR),
-                    (cfg.role_id("supervisor"), PermissionLevel.SUPERVISOR),
-                ]
-                for rid, lv in mapping:
-                    if rid and rid in role_ids:
-                        level = lv
-                        break
-                record = await db.get_personnel(gid, user_id)
-                if record and record["rank_level"]:
-                    rank_lv = PermissionLevel(int(record["rank_level"]))
-                    if rank_lv > level:
-                        level = rank_lv
+        if user_id not in settings.owner_ids:
+            return RedirectResponse("/login?error=owner", status_code=302)
 
         request.session.pop("oauth_state", None)
         request.session["user"] = {
             "id": user_id,
             "username": profile.get("global_name") or profile.get("username"),
             "avatar": profile.get("avatar"),
-            "level": int(level),
+            "level": int(PermissionLevel.OWNER),
         }
         return RedirectResponse("/", status_code=302)
 
@@ -216,16 +227,15 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def overview(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.TROOPER)
+        bounce = gated(request)
         if bounce:
             return bounce
         gid = guild_id()
         counts = await db.dashboard_counts(gid) if gid else {
-            "active_personnel": 0, "active_shifts": 0, "loa": 0, "probation": 0, "awaiting_supervision": 0
+            "active_personnel": 0, "active_shifts": 0, "loa": 0, "pending_loa": 0
         }
         cfg = await bot.guild_config(gid) if gid else None
-        week_id = None
-        quota_rows = []
+        quota_rows: list[Any] = []
         if gid and cfg:
             week_id = await db.ensure_week(gid, db.week_start_ts(cfg.get("timezone") or "America/Chicago"))
             quota_rows = [r for r in await db.list_quota_records(week_id) if r["quota_type"] == "duty"]
@@ -234,7 +244,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
         )
         shifts = await db.list_active_shifts(gid) if gid else []
         promotions = await db.list_audit(gid, 6, "promotion") if gid else []
-        discipline = (await db.list_discipline(gid))[:6] if gid else []
+        ranks = await db.list_ranks(gid) if gid else []
         return render(
             "overview.html",
             ctx(
@@ -245,23 +255,23 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 quota_total=len(quota_rows),
                 shifts=shifts,
                 promotions=promotions,
-                discipline=discipline,
-                denied=request.query_params.get("denied"),
+                ranks=ranks,
             ),
         )
 
     @app.get("/personnel", response_class=HTMLResponse)
     async def personnel_list(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
+        bounce = gated(request)
         if bounce:
             return bounce
         gid = guild_id()
         rows = await db.list_personnel(gid, None) if gid else []
-        return render("personnel.html", ctx(request, page="personnel", rows=rows))
+        ranks = await db.list_ranks(gid) if gid else []
+        return render("personnel.html", ctx(request, page="personnel", rows=rows, ranks=ranks))
 
     @app.get("/personnel/{discord_id}", response_class=HTMLResponse)
     async def personnel_detail(request: Request, discord_id: int) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
+        bounce = gated(request)
         if bounce:
             return bounce
         gid = guild_id()
@@ -270,28 +280,16 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return render("notfound.html", ctx(request, page="personnel"), status_code=404)
         history = await db.rank_history(record["id"])
         notes = await db.list_notes(record["id"])
-        training = await db.list_training(gid, discord_id)
-        discipline = await db.list_discipline(gid, discord_id)
         activity = await db.activity_history(gid, discord_id)
-        vehicles = await db.list_vehicles(gid, discord_id)
+        ranks = await db.list_ranks(gid)
         return render(
             "personnel_detail.html",
-            ctx(
-                request,
-                page="personnel",
-                record=record,
-                history=history,
-                notes=notes,
-                training=training,
-                discipline=discipline,
-                activity=activity,
-                vehicles=vehicles,
-            ),
+            ctx(request, page="personnel", record=record, history=history, notes=notes, activity=activity, ranks=ranks),
         )
 
     @app.get("/shifts", response_class=HTMLResponse)
     async def shifts_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.SUPERVISOR)
+        bounce = gated(request)
         if bounce:
             return bounce
         gid = guild_id()
@@ -302,75 +300,31 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
 
     @app.get("/quota", response_class=HTMLResponse)
     async def quota_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
+        bounce = gated(request)
         if bounce:
             return bounce
         gid = guild_id()
         cfg = await bot.guild_config(gid) if gid else None
         rows: list[Any] = []
+        weekly = 180
         if gid and cfg:
             week_id = await db.ensure_week(gid, db.week_start_ts(cfg.get("timezone") or "America/Chicago"))
-            rows = await db.list_quota_records(week_id)
-        return render("quota.html", ctx(request, page="quota", rows=rows))
+            rows = [r for r in await db.list_quota_records(week_id) if r["quota_type"] == "duty"]
+            weekly = int(cfg.get("quota", "weekly_minutes") or 180)
+        return render("quota.html", ctx(request, page="quota", rows=rows, weekly=weekly))
 
     @app.get("/loa", response_class=HTMLResponse)
     async def loa_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
+        bounce = gated(request)
         if bounce:
             return bounce
         gid = guild_id()
         rows = await db.list_loa(gid) if gid else []
-        now = now_ts()
-        return render("loa.html", ctx(request, page="loa", rows=rows, now=now))
-
-    @app.get("/discipline", response_class=HTMLResponse)
-    async def discipline_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
-        if bounce:
-            return bounce
-        gid = guild_id()
-        rows = await db.list_discipline(gid) if gid else []
-        return render("discipline.html", ctx(request, page="discipline", rows=rows))
-
-    @app.get("/tickets", response_class=HTMLResponse)
-    async def tickets_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
-        if bounce:
-            return bounce
-        gid = guild_id()
-        rows = await db.list_tickets(gid) if gid else []
-        return render("tickets.html", ctx(request, page="tickets", rows=rows))
-
-    @app.get("/fastpass", response_class=HTMLResponse)
-    async def fastpass_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
-        if bounce:
-            return bounce
-        gid = guild_id()
-        rows = await db.list_fastpass(gid) if gid else []
-        return render("fastpass.html", ctx(request, page="fastpass", rows=rows))
-
-    @app.get("/supervision", response_class=HTMLResponse)
-    async def supervision_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.SUPERVISOR)
-        if bounce:
-            return bounce
-        gid = guild_id()
-        rows = await db.list_supervisions(gid) if gid else []
-        return render("supervision.html", ctx(request, page="supervision", rows=rows))
-
-    @app.get("/probation", response_class=HTMLResponse)
-    async def probation_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
-        if bounce:
-            return bounce
-        gid = guild_id()
-        rows = await db.list_active_probations(gid) if gid else []
-        return render("probation.html", ctx(request, page="probation", rows=rows))
+        return render("loa.html", ctx(request, page="loa", rows=rows, now=now_ts()))
 
     @app.get("/audit", response_class=HTMLResponse)
     async def audit_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.HR)
+        bounce = gated(request)
         if bounce:
             return bounce
         gid = guild_id()
@@ -379,13 +333,145 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
 
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request) -> Any:
-        bounce = gated(request, PermissionLevel.SUPERINTENDENT)
+        bounce = gated(request)
         if bounce:
             return bounce
         gid = guild_id()
         cfg = await bot.guild_config(gid) if gid else None
         missing = cfg.missing_required() if cfg else ["guild not configured"]
         return render("settings.html", ctx(request, page="settings", cfg=cfg.raw if cfg else {}, missing=missing))
+
+    @app.post("/actions")
+    async def actions(
+        request: Request,
+        action: str = Form(...),
+        discord_id: str | None = Form(None),
+        reason: str | None = Form(None),
+        rank: str | None = Form(None),
+        position: str | None = Form(None),
+        callsign: str | None = Form(None),
+        note_type: str | None = Form(None),
+        content: str | None = Form(None),
+        loa_id: int | None = Form(None),
+        weekly_minutes: int | None = Form(None),
+        next: str = Form("/"),
+    ) -> Any:
+        bounce = gated(request)
+        if bounce:
+            return bounce
+        user = current_user(request)
+        assert user is not None
+        actor = _Actor(user)
+        g = guild()
+        if g is None:
+            return bounce_to(next, err="Bot is not in the guild yet.")
+        try:
+            message = await _run_action(
+                action=action,
+                actor=actor,
+                g=g,
+                discord_id=int(discord_id) if discord_id and str(discord_id).isdigit() else None,
+                reason=reason or "",
+                rank=rank,
+                position=position,
+                callsign=callsign,
+                note_type=note_type,
+                content=content,
+                loa_id=loa_id,
+                weekly_minutes=weekly_minutes,
+            )
+        except ValueError as exc:
+            return bounce_to(next, err=str(exc))
+        except Exception:
+            log.exception("Web action %s failed", action)
+            return bounce_to(next, err="That action failed. Check Render logs.")
+        return bounce_to(next, ok=message)
+
+    async def _run_action(**kwargs: Any) -> str:
+        action = kwargs["action"]
+        actor: _Actor = kwargs["actor"]
+        g: discord.Guild = kwargs["g"]
+        discord_id: int | None = kwargs["discord_id"]
+        reason: str = kwargs["reason"] or "Updated from Command Center"
+        member = await member_for(discord_id) if discord_id else None
+
+        if action == "reset_shifts":
+            deleted = await reset_shift_data(bot, g, actor)
+            return f"Cleared {deleted} shift record(s) and duty quota totals."
+
+        if action == "quota_set" and kwargs["weekly_minutes"] is not None:
+            cfg = await bot.guild_config(g.id)
+            cfg.set_path(["quota", "weekly_minutes"], int(kwargs["weekly_minutes"]))
+            await bot.save_config(g.id, cfg)
+            return f"Weekly quota set to {kwargs['weekly_minutes']} minutes."
+
+        if action in {"loa_approve", "loa_deny"} and kwargs["loa_id"]:
+            status = "approved" if action == "loa_approve" else "denied"
+            err = await decide_loa_record(bot, g, int(kwargs["loa_id"]), status, reason or None, actor)
+            if err:
+                raise ValueError(err)
+            return f"LOA #{kwargs['loa_id']} {status}."
+
+        if discord_id is None:
+            raise ValueError("Discord ID is required.")
+
+        if action == "add":
+            if member is None:
+                raise ValueError("Could not find that Discord member in the guild.")
+            if not kwargs["rank"]:
+                raise ValueError("Rank is required.")
+            rank_row = await db.get_rank_by_name(g.id, kwargs["rank"])
+            if not rank_row:
+                raise ValueError("Unknown rank.")
+            record = await db.upsert_personnel(g.id, member.id, str(member), rank_id=rank_row["id"])
+            fields: dict[str, Any] = {"status": "active"}
+            if kwargs["position"]:
+                fields["position"] = kwargs["position"]
+            if kwargs["callsign"]:
+                fields["callsign"] = kwargs["callsign"]
+            await db.update_personnel(record["id"], **fields)
+            cfg = await bot.guild_config(g.id)
+            await sync_rank_roles(member, kwargs["rank"], cfg)
+            return f"{member} added as {kwargs['rank']}."
+
+        if member is None:
+            raise ValueError("Could not find that Discord member in the guild. The bot may need the Members intent.")
+
+        if action == "note":
+            record = await ensure_personnel(bot, member)
+            await db.add_note(record["id"], kwargs["note_type"] or "hr", kwargs["content"] or reason, actor.id)
+            return f"Note added to {member}."
+
+        if action == "transfer":
+            record = await ensure_personnel(bot, member)
+            await db.update_personnel(record["id"], position=kwargs["position"] or "Patrol")
+            return f"{member} transferred to {kwargs['position'] or 'Patrol'}."
+
+        if action == "suspend":
+            await set_status(bot, g, member, "suspended", reason, actor)
+            return f"{member} suspended."
+        if action == "remove":
+            await set_status(bot, g, member, "removed", reason, actor)
+            return f"{member} removed from the roster."
+        if action == "reinstate":
+            await set_status(bot, g, member, "active", reason, actor)
+            return f"{member} reinstated."
+        if action == "promote":
+            err = await change_rank(bot, g, member, kwargs["rank"] or "", reason, actor, actor, "promotion")
+            if err:
+                raise ValueError(err)
+            return f"{member} promoted to {kwargs['rank']}."
+        if action == "demote":
+            err = await change_rank(bot, g, member, kwargs["rank"] or "", reason, actor, actor, "demotion")
+            if err:
+                raise ValueError(err)
+            return f"{member} demoted to {kwargs['rank']}."
+        if action == "fire":
+            return await fire_member(bot, g, member, reason, actor, actor)
+        if action == "end_shift":
+            await end_active_shift(bot, g, member.id)
+            return f"Active shift ended for {member}."
+        raise ValueError(f"Unknown action {action}")
 
     return app
 
@@ -404,22 +490,12 @@ NAV_GROUPS = [
         "People",
         [
             ("personnel", "/personnel", "Personnel"),
-            ("supervision", "/supervision", "Supervision"),
-            ("probation", "/probation", "Probation"),
-            ("fastpass", "/fastpass", "Fast-pass"),
-        ],
-    ),
-    (
-        "Records",
-        [
-            ("discipline", "/discipline", "Discipline"),
-            ("tickets", "/tickets", "Tickets"),
-            ("audit", "/audit", "Audit"),
         ],
     ),
     (
         "System",
         [
+            ("audit", "/audit", "Audit"),
             ("settings", "/settings", "Settings"),
         ],
     ),

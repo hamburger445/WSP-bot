@@ -32,62 +32,6 @@ DEFAULT_RANKS = [
     ("Superintendent", 12, 5),
 ]
 
-FASTPASS_CATEGORIES = [
-    "Traffic Stops",
-    "Radio Communications",
-    "Traffic Laws & Violations",
-    "Probable Cause / Reasonable Suspicion",
-    "De-escalation",
-    "Pursuit Procedures",
-    "Use of Force",
-    "Incident / Arrest Reports",
-    "General Law Enforcement Procedures",
-    "Overall Law Enforcement Knowledge",
-]
-
-FASTPASS_SCALE = {
-    1: "Very unfamiliar",
-    2: "Limited knowledge",
-    3: "Somewhat familiar",
-    4: "Confident",
-    5: "Very confident",
-}
-
-FASTPASS_RECOMMENDATIONS = {
-    "full_training": "Full Training Required",
-    "partial_training": "Partial Training Required",
-    "waived": "Training Waived",
-    "additional_eval": "Additional Evaluation Required",
-}
-
-DISCIPLINE_ACTIONS = [
-    "Verbal Warning",
-    "Written Warning",
-    "Strike",
-    "Suspension",
-    "Demotion",
-    "Removal",
-]
-
-TICKET_TYPES = [
-    ("resignation", "Resignation"),
-    ("loa", "LOA Request"),
-    ("hr_question", "HR Question"),
-    ("complaint", "Complaint"),
-    ("transfer", "Transfer"),
-    ("appeal", "Appeal"),
-    ("general", "General Assistance"),
-]
-
-SUPERVISION_SCORE_FIELDS = [
-    ("radio_score", "Radio performance"),
-    ("driving_score", "Driving"),
-    ("scene_score", "Scene management"),
-    ("communication_score", "Communication"),
-    ("policy_score", "Policy knowledge"),
-    ("overall_score", "Overall performance"),
-]
-
 
 class PermissionLevel(IntEnum):
     TROOPER = 1

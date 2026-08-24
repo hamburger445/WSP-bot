@@ -196,9 +196,10 @@ class GuildConfig:
         missing: list[str] = []
         if not self.guild_id():
             missing.append("guild_id")
+        defaults = load_default_config()
         for section in ("roles", "rank_roles", "channels", "categories"):
-            for key, value in (self.get(section) or {}).items():
-                if not _as_snowflake(value):
+            for key in (defaults.get(section) or {}):
+                if not _as_snowflake(self.get(section, key)):
                     missing.append(f"{section}.{key}")
         return missing
 

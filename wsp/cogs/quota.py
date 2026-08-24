@@ -31,17 +31,6 @@ async def apply_shift_quota(bot: WSPBot, guild_id: int, discord_id: int, duratio
         await bot.db.upsert_quota_record(week_id, discord_id, "duty", required, status="complete")
 
 
-async def apply_supervision_quota(bot: WSPBot, guild_id: int, supervisor_id: int, minutes: int) -> None:
-    cfg = await bot.guild_config(guild_id)
-    tz = cfg.get("timezone") or "America/Chicago"
-    week_id = await bot.db.ensure_week(guild_id, bot.db.week_start_ts(tz))
-    required = int(cfg.get("quota", "hr_supervision_minutes") or 30)
-    await bot.db.upsert_quota_record(week_id, supervisor_id, "supervision", required, add_supervision=minutes)
-    record = await bot.db.get_quota_record(week_id, supervisor_id, "supervision")
-    if record and int(record["supervision_minutes"]) >= required:
-        await bot.db.upsert_quota_record(week_id, supervisor_id, "supervision", required, status="complete")
-
-
 class Quota(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
@@ -61,10 +50,8 @@ class Quota(commands.Cog):
         week = self.bot.db.week_start_ts(cfg.get("timezone") or "America/Chicago")
         week_id = await self.bot.db.ensure_week(interaction.guild.id, week)
         duty = await self.bot.db.get_quota_record(week_id, target.id, "duty")
-        hrq = await self.bot.db.get_quota_record(week_id, target.id, "supervision")
         loa = await self.bot.db.active_loa(interaction.guild.id, target.id)
         required = int(cfg.get("quota", "weekly_minutes") or 180)
-        hr_req = int(cfg.get("quota", "hr_supervision_minutes") or 30)
         embed = base_embed(f"Weekly quota  •  {target}")
         duty_min = int(duty["completed_minutes"]) if duty else 0
         add_fields(
@@ -72,7 +59,6 @@ class Quota(commands.Cog):
             [
                 ("Duty time", f"{duty_min} / {required} minutes", True),
                 ("Duty status", "Exempt (LOA)" if loa else (duty["status"] if duty and duty["status"] else _status(duty_min, required)), True),
-                ("HR supervision", f"{int(hrq['supervision_minutes']) if hrq else 0} / {hr_req} minutes", True),
             ],
         )
         embed.set_footer(text="Quota resets every Monday 00:00 in the department timezone. Missed quota is reported to HR — not auto-punished.")
@@ -95,16 +81,6 @@ class Quota(commands.Cog):
                 f"{mention_or_id(interaction.guild, r['discord_id'])} — **{r['completed_minutes']}** / {r['required_minutes']} min (`{r['status'] or 'in progress'}`)"
                 for r in sorted(duty_rows, key=lambda r: int(r["completed_minutes"]), reverse=True)[:20]
             )
-        hr_rows = [r for r in rows if r["quota_type"] == "supervision"]
-        if hr_rows:
-            embed.add_field(
-                name="HR supervision",
-                value="\n".join(
-                    f"{mention_or_id(interaction.guild, r['discord_id'])} — {r['supervision_minutes']} / {r['required_minutes']} min"
-                    for r in hr_rows[:10]
-                ),
-                inline=False,
-            )
         await interaction.response.send_message(embed=embed)
 
     @quota.command(name="admin", description="Adjust quota settings or grant a one-week exemption.")
@@ -113,7 +89,6 @@ class Quota(commands.Cog):
         self,
         interaction: discord.Interaction,
         weekly_minutes: int | None = None,
-        hr_supervision_minutes: int | None = None,
         exempt_member: discord.Member | None = None,
     ) -> None:
         if not interaction.guild:
@@ -123,9 +98,6 @@ class Quota(commands.Cog):
         if weekly_minutes is not None:
             cfg.set_path(["quota", "weekly_minutes"], weekly_minutes)
             changed.append(f"duty quota = {weekly_minutes} min")
-        if hr_supervision_minutes is not None:
-            cfg.set_path(["quota", "hr_supervision_minutes"], hr_supervision_minutes)
-            changed.append(f"HR supervision quota = {hr_supervision_minutes} min")
         if changed:
             await self.bot.save_config(interaction.guild.id, cfg)
             await self.bot.db.audit(
@@ -147,7 +119,6 @@ class Quota(commands.Cog):
                 embed,
                 [
                     ("Duty minutes / week", cfg.get("quota", "weekly_minutes"), True),
-                    ("HR supervision minutes", cfg.get("quota", "hr_supervision_minutes"), True),
                     ("Timezone", cfg.get("timezone"), True),
                 ],
             )

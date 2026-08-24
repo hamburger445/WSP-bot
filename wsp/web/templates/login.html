@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/app.css?v=4">
+  <link rel="stylesheet" href="/static/app.css?v=5">
 </head>
 <body class="login-body">
   <div class="lightbar"></div>
@@ -26,10 +26,12 @@
     </aside>
     <section class="login-panel">
       <p class="eyebrow">Command Center</p>
-      <h2>Sign in</h2>
-      <p class="lede">Use the Discord account that holds your WSP roles.</p>
+      <h2>Owner sign in</h2>
+      <p class="lede">This Command Center is limited to accounts listed in OWNER_IDS.</p>
       {% if error == 'guild' %}
         <p class="banner">You are not a member of the configured WSP guild.</p>
+      {% elif error == 'owner' %}
+        <p class="banner">Only the bot owner can open the Command Center.</p>
       {% elif error == 'redirect' %}
         <p class="banner">Discord rejected the redirect URL. Add the exact URI below under OAuth2 → Redirects.</p>
       {% elif error %}

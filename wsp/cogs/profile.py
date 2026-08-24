@@ -59,9 +59,6 @@ async def profile_overview(bot: WSPBot, guild: discord.Guild, member: discord.Me
             ("Callsign", record["callsign"] or "—", True),
             ("Status", (record["status"] or "active").title(), True),
             ("Joined", ts(record["join_date"]), True),
-            ("Training", (record["training_status"] or "pending").replace("_", " ").title(), True),
-            ("Supervision", (record["supervision_status"] or "none").replace("_", " ").title(), True),
-            ("Probation", (record["probation_status"] or "none").replace("_", " ").title(), True),
         ],
     )
     if not sensitive:
@@ -88,11 +85,8 @@ class ProfileSelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Personnel information", value="info"),
             discord.SelectOption(label="Rank history", value="ranks"),
-            discord.SelectOption(label="Training", value="training"),
             discord.SelectOption(label="Quota", value="quota"),
         ]
-        if notes_ok or self_view:
-            options.append(discord.SelectOption(label="Discipline", value="discipline"))
         if notes_ok:
             options.append(discord.SelectOption(label="Notes", value="notes"))
         options.append(discord.SelectOption(label="Activity", value="activity"))
@@ -116,12 +110,6 @@ class ProfileSelect(discord.ui.Select):
                 ephemeral=True,
             )
             return
-        if choice == "discipline" and not (self.notes_ok or self.self_view):
-            await interaction.response.send_message(
-                embed=error_embed("Restricted", "Disciplinary records require HR or Command."),
-                ephemeral=True,
-            )
-            return
         embed = await _section_embed(bot, guild, member, record, choice, self.self_view)
         await interaction.response.edit_message(embed=embed, view=self.view)
 
@@ -142,44 +130,19 @@ async def _section_embed(
                 for r in rows[:12]
             )
         return embed
-    if choice == "training":
-        rows = await bot.db.list_training(guild.id, member.id)
-        embed = base_embed(f"Training  •  {member.display_name}")
-        embed.add_field(name="Overall", value=(record["training_status"] or "pending").replace("_", " ").title(), inline=True)
-        embed.description = "\n".join(f"• **{r['module']}** — `{r['status']}`" for r in rows) or "No modules recorded."
-        return embed
     if choice == "quota":
         cfg = await bot.guild_config(guild.id)
         week = bot.db.week_start_ts(cfg.get("timezone") or "America/Chicago")
         week_id = await bot.db.ensure_week(guild.id, week)
         duty = await bot.db.get_quota_record(week_id, member.id, "duty")
-        hrq = await bot.db.get_quota_record(week_id, member.id, "supervision")
         embed = base_embed(f"Quota  •  {member.display_name}")
         if duty:
             embed.add_field(name="Duty this week", value=f"{duty['completed_minutes']} / {duty['required_minutes']} min", inline=True)
         else:
             embed.add_field(name="Duty this week", value="No duty quota row yet", inline=True)
-        if hrq:
-            embed.add_field(name="HR supervision", value=f"{hrq['supervision_minutes']} / {hrq['required_minutes']} min", inline=True)
         totals = await bot.db.shift_totals(guild.id, member.id)
         if totals:
             embed.add_field(name="All-time duty", value=format_duration(totals["total_seconds"]), inline=True)
-        return embed
-    if choice == "discipline":
-        rows = await bot.db.list_discipline(guild.id, member.id)
-        embed = base_embed(f"Discipline  •  {member.display_name}")
-        if not rows:
-            embed.description = "No disciplinary records."
-        else:
-            lines = []
-            for r in rows[:12]:
-                state = "active" if r["active"] else "inactive"
-                appeal = await bot.db.get_appeal_for_discipline(int(r["id"]))
-                extra = f" • appeal `{appeal['status']}`" if appeal else ""
-                lines.append(f"`#{r['id']}` {ts_rel(r['created_at'])} **{r['action']}** ({state}){extra}\n{r['reason']}")
-            embed.description = "\n".join(lines)
-            if self_view:
-                embed.set_footer(text="Appeal an active record with /appeal and the record number.")
         return embed
     if choice == "notes":
         rows = await bot.db.list_notes(record["id"])

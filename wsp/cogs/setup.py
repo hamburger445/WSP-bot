@@ -40,9 +40,7 @@ RANK_BIND = [
 ]
 
 CHANNEL_SPECS = [
-    ("applications", "Fast-pass and application traffic"),
     ("promotions", "Promotion and demotion notices"),
-    ("discipline", "Discipline and moderation log"),
     ("loa", "Leave of absence requests"),
     ("quota", "Quota reminders and reports"),
     ("shift_log", "Shift start, pause, and end logs"),
@@ -50,18 +48,11 @@ CHANNEL_SPECS = [
     ("hr_log", "HR action log"),
     ("command_log", "Command action log"),
     ("audit_log", "Full audit trail"),
-    ("fastpass", "Fast-pass evaluations"),
-    ("supervision", "Ride-along / supervision"),
-    ("probation", "Probationary period tracking"),
-    ("tickets_log", "Ticket transcripts and closures"),
-    ("ticket_panel", "Public ticket panel"),
-    ("resignations", "Resignation notices"),
 ]
 
 CATEGORY_SPECS = [
     ("logs", "Log channels"),
     ("command", "Command channels"),
-    ("tickets", "Ticket channels are opened in this category"),
 ]
 
 
@@ -81,23 +72,14 @@ WIZARD_STEPS: list[WizardStep] = [
     *[WizardStep("rank", name, f"Which role is {name}?") for _param, name in RANK_BIND],
     WizardStep("category", "logs", "Which category should log channels live in?"),
     WizardStep("category", "command", "Which category should command channels live in?"),
-    WizardStep("category", "tickets", "Which category should new ticket channels be created in?"),
     WizardStep("channel", "audit_log", "Where do you want audit logs to go?"),
     WizardStep("channel", "command_log", "Where do you want command logs to go?"),
-    WizardStep("channel", "discipline", "Where do you want discipline and moderation logs to go?"),
     WizardStep("channel", "shift_log", "Where do you want shift logs to go?"),
     WizardStep("channel", "hr_log", "Where do you want HR logs to go?"),
     WizardStep("channel", "notifications", "Where do you want department notifications to go?"),
     WizardStep("channel", "promotions", "Where do you want promotion notices to go?"),
     WizardStep("channel", "loa", "Where do you want LOA requests to go?"),
     WizardStep("channel", "quota", "Where do you want quota reports to go?"),
-    WizardStep("channel", "applications", "Where do you want application traffic to go?"),
-    WizardStep("channel", "fastpass", "Where do you want fast-pass evaluations to go?"),
-    WizardStep("channel", "supervision", "Where do you want supervision logs to go?"),
-    WizardStep("channel", "probation", "Where do you want probation logs to go?"),
-    WizardStep("channel", "tickets_log", "Where do you want ticket transcripts to go?"),
-    WizardStep("channel", "ticket_panel", "Where should the public ticket panel be posted?"),
-    WizardStep("channel", "resignations", "Where do you want resignation notices to go?"),
 ]
 
 
@@ -146,7 +128,7 @@ class Setup(commands.Cog):
                 missing_discord.append(f"category {key} (`{cid}`)")
         tables = await self.bot.db.fetchall("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         table_names = [r["name"] for r in tables]
-        required_tables = ["personnel", "shifts", "audit_log", "tickets", "loa_requests", "discipline"]
+        required_tables = ["personnel", "shifts", "audit_log", "loa_requests"]
         missing_tables = [t for t in required_tables if t not in table_names]
         ok = not missing_cfg and not missing_discord and not missing_tables
         embed = success_embed("Setup verification", "All required IDs are set and exist.") if ok else warning_embed(
@@ -180,8 +162,8 @@ class Setup(commands.Cog):
             ch_preview = list(channels.items())[:10]
             embed.add_field(name="Channels", value="\n".join(f"`{k}` → `{v or 'unset'}`" for k, v in ch_preview) or "—", inline=True)
             embed.add_field(
-                name="Quota / probation",
-                value=f"Duty `{cfg.get('quota', 'weekly_minutes')}` min/week\nHR supervision `{cfg.get('quota', 'hr_supervision_minutes')}` min\nProbation `{cfg.get('probation', 'duration_days')}` days",
+                name="Quota",
+                value=f"Duty `{cfg.get('quota', 'weekly_minutes')}` min/week",
                 inline=False,
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -283,8 +265,7 @@ async def _finish_wizard(bot: WSPBot, interaction: discord.Interaction, *, edit:
     missing = cfg.missing_required()
     embed = success_embed(
         "Setup complete",
-        "All questions are done. The bot will use the IDs you entered.\n"
-        "Post the ticket panel with `/ticket panel` in that channel when you are ready.",
+        "All questions are done. The bot will use the IDs you entered.",
     )
     if missing:
         embed = warning_embed(

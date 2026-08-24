@@ -3,9 +3,18 @@
 {% block heading %}Duty board{% endblock %}
 {% block content %}
 <section class="panel">
+  <h2>Reset shift data</h2>
+  <p class="meta">Deletes every shift record and clears duty quota totals. Same as Reset shift data on `/dashboard`.</p>
+  <form method="post" action="/actions" onsubmit="return confirm('Delete every shift record and clear duty quota totals? This cannot be undone.');">
+    <input type="hidden" name="next" value="/shifts">
+    <input type="hidden" name="action" value="reset_shifts">
+    <button class="danger-btn" type="submit">Reset all shift data</button>
+  </form>
+</section>
+<section class="panel spaced">
   <h2>On duty now</h2>
   <table>
-    <thead><tr><th>Member</th><th>Callsign</th><th>Rank</th><th>Status</th><th>Started</th></tr></thead>
+    <thead><tr><th>Member</th><th>Callsign</th><th>Rank</th><th>Status</th><th>Started</th><th></th></tr></thead>
     <tbody>
       {% for row in active %}
       <tr>
@@ -14,8 +23,16 @@
         <td>{{ row.rank_name or "—" }}</td>
         <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>
         <td>{{ row.start_time | when }}</td>
+        <td>
+          <form method="post" action="/actions">
+            <input type="hidden" name="next" value="/shifts">
+            <input type="hidden" name="action" value="end_shift">
+            <input type="hidden" name="discord_id" value="{{ row.discord_id }}">
+            <button class="ghost" type="submit">End</button>
+          </form>
+        </td>
       </tr>
-      {% else %}<tr><td colspan="5" class="empty">Nobody on duty.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="6" class="empty">Nobody on duty.</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>

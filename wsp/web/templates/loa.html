@@ -4,7 +4,7 @@
 {% block content %}
 <section class="panel">
   <table>
-    <thead><tr><th>ID</th><th>Member</th><th>Window</th><th>Reason</th><th>Status</th></tr></thead>
+    <thead><tr><th>ID</th><th>Member</th><th>Window</th><th>Reason</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for row in rows %}
       <tr>
@@ -13,8 +13,19 @@
         <td>{{ row.start_date | when }} → {{ row.end_date | when }}</td>
         <td>{{ row.reason }}</td>
         <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>
+        <td>
+          {% if row.status == "pending" %}
+          <form class="form-inline" method="post" action="/actions">
+            <input type="hidden" name="next" value="/loa">
+            <input type="hidden" name="loa_id" value="{{ row.id }}">
+            <input name="reason" placeholder="Note">
+            <button class="gold-btn" type="submit" name="action" value="loa_approve">Approve</button>
+            <button class="danger-btn" type="submit" name="action" value="loa_deny">Deny</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
-      {% else %}<tr><td colspan="5" class="empty">No LOA records.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="6" class="empty">No LOA records.</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>

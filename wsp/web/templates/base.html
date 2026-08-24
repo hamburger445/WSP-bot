@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/app.css?v=4">
+  <link rel="stylesheet" href="/static/app.css?v=5">
 </head>
 <body>
   <div class="lightbar"></div>
@@ -24,14 +24,10 @@
       </div>
       <nav>
         {% for group, items in nav_groups %}
-          {% if group != 'System' or (user and user.level >= 5) %}
           <p class="nav-group">{{ group }}</p>
           {% for key, href, label in items %}
-            {% if key != 'settings' or (user and user.level >= 5) %}
-            <a class="nav-link{% if page == key %} is-active{% endif %}" href="{{ href }}">{{ label }}</a>
-            {% endif %}
+          <a class="nav-link{% if page == key %} is-active{% endif %}" href="{{ href }}">{{ label }}</a>
           {% endfor %}
-          {% endif %}
         {% endfor %}
       </nav>
       <div class="rail-foot">
@@ -51,11 +47,9 @@
             <input type="search" list="page-jump" placeholder="Search pages…" autocomplete="off">
             <datalist id="page-jump">
               {% for group, items in nav_groups %}
-                {% for key, href, label in items %}
-                  {% if key != 'settings' or (user and user.level >= 5) %}
+                  {% for key, href, label in items %}
                   <option value="{{ href }}">{{ label }}</option>
-                  {% endif %}
-                {% endfor %}
+                  {% endfor %}
               {% endfor %}
             </datalist>
           </label>
@@ -68,6 +62,12 @@
           {% endif %}
         </div>
       </header>
+      {% if notice %}
+        <div class="banner ok">{{ notice }}</div>
+      {% endif %}
+      {% if error %}
+        <div class="banner">{{ error }}</div>
+      {% endif %}
       {% if denied %}
         <div class="banner">That desk requires a higher access level.</div>
       {% endif %}
