@@ -30,8 +30,10 @@ class Shifts(commands.Cog):
         if not interaction.guild:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
-        embed = await build_shift_controls()
-        await interaction.response.send_message(embed=embed, view=ShiftActionView(lock_buttons=False))
+        row = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
+        status = row["status"] if row else None
+        embed = await build_shift_controls(status)
+        await interaction.response.send_message(embed=embed, view=ShiftActionView(status))
 
     @shift.command(name="data", description="Post the public duty board and leaderboard.")
     async def data(self, interaction: discord.Interaction) -> None:

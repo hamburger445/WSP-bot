@@ -71,13 +71,14 @@ class ShiftActionView(discord.ui.View):
         await _end_shift(interaction)
 
 
-async def build_shift_controls() -> discord.Embed:
-    return base_embed(
-        "Shift controls",
-        "Use these buttons to start, pause, resume, or end **your** shift. "
-        "Anyone on duty can press them. Confirmations stay private.",
-        color=COLOR_NAVY,
-    )
+async def build_shift_controls(status: str | None = None) -> discord.Embed:
+    if status == "paused":
+        body = "Your shift is paused. **Resume** and **End** are available. Start stays off until you end."
+    elif status == "active":
+        body = "You are on duty. **Pause** and **End** are available. Start stays off until you end."
+    else:
+        body = "You are off duty. Use **Start shift**. Pause and End stay off until you are on duty."
+    return base_embed("Shift controls", body, color=COLOR_NAVY)
 
 
 async def build_duty_board(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
@@ -304,18 +305,24 @@ async def _finish_shift_action(
         row = await bot.db.active_shift(guild.id, interaction.user.id)
         status = row["status"] if row else None
         title = _message_title(interaction)
-        if title == "Your shift":
-            personal = await build_personal_shift(bot, guild, interaction.user, row)
+        if title in {"Your shift", "Shift controls"}:
+            if title == "Shift controls":
+                panel = await build_shift_controls(status)
+            else:
+                panel = await build_personal_shift(bot, guild, interaction.user, row)
             if notice.title:
-                personal.add_field(name="Update", value=notice.title, inline=False)
+                panel.add_field(name="Update", value=notice.title, inline=False)
             view = ShiftActionView(status)
             if not interaction.response.is_done():
-                await interaction.response.edit_message(embed=personal, view=view)
+                await interaction.response.edit_message(embed=panel, view=view)
             elif interaction.message:
                 try:
-                    await interaction.message.edit(embed=personal, view=view)
+                    await interaction.message.edit(embed=panel, view=view)
                 except discord.HTTPException:
                     await _reply_ephemeral(interaction, notice)
+                    return
+            if title == "Shift controls":
+                await interaction.followup.send(embed=notice, ephemeral=True)
             return
     await _reply_ephemeral(interaction, notice)
 
