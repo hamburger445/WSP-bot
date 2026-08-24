@@ -11,6 +11,7 @@ import asyncio
 import logging
 import signal
 
+import discord
 import uvicorn
 
 from wsp.bot import WSPBot
@@ -45,8 +46,32 @@ async def run() -> None:
 
     bot_task: asyncio.Task | None = None
     if settings.discord_token:
-        bot_task = asyncio.create_task(bot.start(settings.discord_token), name="wsp-discord")
+        log.info(
+            "Discord token loaded (%s chars). Guild ID=%s. Starting bot…",
+            len(settings.discord_token),
+            settings.guild_id or "unset",
+        )
+
+        async def run_discord() -> None:
+            try:
+                await bot.start(settings.discord_token)
+            except discord.LoginFailure:
+                bot.last_error = "invalid DISCORD_TOKEN"
+                log.exception("Discord rejected the bot token. Reset it in the Developer Portal and update the Render env var.")
+            except discord.PrivilegedIntentsRequired:
+                bot.last_error = "privileged intents"
+                log.exception(
+                    "Enable SERVER MEMBERS INTENT in Discord Developer Portal → Bot → Privileged Gateway Intents."
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                bot.last_error = str(exc)
+                log.exception("Discord bot failed to start")
+
+        bot_task = asyncio.create_task(run_discord(), name="wsp-discord")
     else:
+        bot.last_error = "DISCORD_TOKEN is empty"
         log.warning("DISCORD_TOKEN is empty — web dashboard will run without the Discord bot.")
 
     async def shutdown() -> None:

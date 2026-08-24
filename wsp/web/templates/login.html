@@ -6,32 +6,44 @@
   <title>Sign in · WSP Command Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/app.css">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css?v=3">
 </head>
 <body class="login-body">
-  <div class="login-card">
-    <div class="login-seal">
-      <span>WSP</span>
-    </div>
-    <p class="kicker">Lakeville Roleplay</p>
-    <h1>Wisconsin State Patrol</h1>
-    <p class="lede">Command Center. Restricted to department personnel. Sign in with Discord to continue.</p>
-    {% if error == 'guild' %}
-      <p class="banner">You are not a member of the configured WSP guild.</p>
-    {% elif error == 'redirect' %}
-      <p class="banner">Discord rejected the redirect URL. Add the exact URI below under OAuth2 → Redirects, then try again.</p>
-    {% elif error %}
-      <p class="banner">Sign-in failed. Check OAuth client ID, secret, and redirect URL.</p>
-    {% endif %}
-    {% if oauth_ready %}
-      <a class="gold-btn" href="/auth/discord">Continue with Discord</a>
-    {% else %}
-      <p class="banner">Set <code>DISCORD_CLIENT_ID</code> and <code>DISCORD_CLIENT_SECRET</code> in the host environment.</p>
-    {% endif %}
-    <p class="lede" style="margin-top:22px">Add this <strong>exact</strong> redirect in Discord Developer Portal → OAuth2 → Redirects:</p>
-    <p class="mono" style="word-break:break-all;color:#e4d09a">{{ oauth_redirect }}</p>
-    <p class="fine">Duty logs, personnel files, and disciplinary records are audited.</p>
+  <div class="lightbar"></div>
+  <div class="login-shell">
+    <aside class="login-brand">
+      <p class="kicker">Lakeville Roleplay</p>
+      <p class="login-state">Wisconsin</p>
+      <h1>State Patrol</h1>
+      <p class="lede">Authorized personnel only. All sign-ins are logged against the department audit file.</p>
+      <div class="login-status">
+        <div class="signal {{ 'live' if bot_ready else 'down' }}"></div>
+        <span>{{ 'Gateway connected' if bot_ready else 'Bot offline — check Render logs and DISCORD_TOKEN' }}</span>
+      </div>
+    </aside>
+    <section class="login-panel">
+      <p class="eyebrow">Command Center</p>
+      <h2>Sign in</h2>
+      <p class="lede">Use the Discord account that holds your WSP roles.</p>
+      {% if error == 'guild' %}
+        <p class="banner">You are not a member of the configured WSP guild.</p>
+      {% elif error == 'redirect' %}
+        <p class="banner">Discord rejected the redirect URL. Add the exact URI below under OAuth2 → Redirects.</p>
+      {% elif error %}
+        <p class="banner">Sign-in failed. Check OAuth client ID, secret, and redirect URL.</p>
+      {% endif %}
+      {% if oauth_ready %}
+        <a class="gold-btn" href="/auth/discord">Continue with Discord</a>
+      {% else %}
+        <p class="banner">Set <code>DISCORD_CLIENT_ID</code> and <code>DISCORD_CLIENT_SECRET</code> on the host.</p>
+      {% endif %}
+      <details class="oauth-help">
+        <summary>OAuth redirect URI</summary>
+        <p>Discord Developer Portal → OAuth2 → Redirects. Paste exactly:</p>
+        <p class="mono oauth-uri">{{ oauth_redirect }}</p>
+      </details>
+    </section>
   </div>
 </body>
 </html>

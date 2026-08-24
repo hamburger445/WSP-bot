@@ -38,13 +38,18 @@ COG_MODULES = [
 class WSPBot(commands.Bot):
     def __init__(self, settings: Settings, db: Database) -> None:
         intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
         intents.guilds = True
+        # Privileged intents (members / message content) will keep the bot
+        # completely offline if they are not enabled in the Developer Portal.
+        intents.members = False
+        intents.message_content = False
         super().__init__(command_prefix="!", intents=intents, help_command=None)
         self.settings = settings
         self.db = db
         self._config_cache: dict[int, GuildConfig] = {}
+        self.last_error: str | None = None
+        self.synced_commands: list[str] = []
+        self._synced = False
 
     async def setup_hook(self) -> None:
         from wsp.views.shifts import ShiftMenuView
@@ -61,18 +66,27 @@ class WSPBot(commands.Bot):
             await self.load_extension(module)
             log.info("Loaded cog %s", module)
 
-        guild_id = self.settings.guild_id
-        if guild_id:
-            guild = discord.Object(id=guild_id)
+    async def sync_app_commands(self) -> None:
+        guild_ids: set[int] = {g.id for g in self.guilds}
+        if self.settings.guild_id:
+            guild_ids.add(self.settings.guild_id)
+        if not guild_ids:
+            synced = await self.tree.sync()
+            self.synced_commands = [c.name for c in synced]
+            log.info("Synced %s global commands: %s", len(synced), self.synced_commands)
+            return
+        names: list[str] = []
+        for gid in guild_ids:
+            guild = discord.Object(id=gid)
             self.tree.copy_global_to(guild=guild)
             synced = await self.tree.sync(guild=guild)
-            log.info("Synced %s guild commands to %s", len(synced), guild_id)
-        else:
-            synced = await self.tree.sync()
-            log.info("Synced %s global commands", len(synced))
+            names = [c.name for c in synced]
+            log.info("Synced %s commands to guild %s: %s", len(synced), gid, names)
+        self.synced_commands = names
 
     async def on_ready(self) -> None:
-        log.info("Logged in as %s (%s)", self.user, self.user.id if self.user else "?")
+        log.info("Logged in as %s (%s) in %s guild(s)", self.user, self.user.id if self.user else "?", len(self.guilds))
+        self.last_error = None
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
@@ -82,6 +96,16 @@ class WSPBot(commands.Bot):
         for guild in self.guilds:
             cfg = await self.guild_config(guild.id)
             await self.db.ensure_ranks(guild.id, cfg)
+        if not self._synced:
+            try:
+                await self.sync_app_commands()
+                self._synced = True
+            except discord.Forbidden:
+                self.last_error = "command sync forbidden — re-invite the bot with the applications.commands scope"
+                log.exception(self.last_error)
+            except Exception as exc:
+                self.last_error = f"command sync failed: {exc}"
+                log.exception("Command sync failed")
 
     async def guild_config(self, guild_id: int) -> GuildConfig:
         if guild_id in self._config_cache:

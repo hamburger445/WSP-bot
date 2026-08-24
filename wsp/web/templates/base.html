@@ -6,16 +6,15 @@
   <title>{% block title %}Command Center{% endblock %} · WSP LVRP</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/app.css">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css?v=3">
 </head>
 <body>
+  <div class="lightbar"></div>
   <div class="shell">
     <aside class="rail">
       <div class="badge">
-        <div class="badge-ring">
-          <span class="badge-mark">WSP</span>
-        </div>
+        <div class="badge-mark">WSP</div>
         <div class="badge-copy">
           <p class="kicker">Wisconsin State Patrol</p>
           <p class="sub">Lakeville Roleplay</p>
@@ -30,13 +29,13 @@
       </nav>
       <div class="rail-foot">
         <div class="signal {{ 'live' if bot_ready else 'down' }}"></div>
-        <span>{{ 'Bot linked' if bot_ready else 'Bot offline' }}</span>
+        <span>{{ 'Gateway connected' if bot_ready else 'Bot offline' }}</span>
       </div>
     </aside>
     <main class="stage">
       <header class="top">
         <div>
-          <p class="eyebrow">Command Center</p>
+          <p class="eyebrow">Division of State Patrol  ·  Command Center</p>
           <h1>{% block heading %}Overview{% endblock %}</h1>
         </div>
         <div class="who">

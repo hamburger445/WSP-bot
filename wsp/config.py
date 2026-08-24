@@ -22,7 +22,10 @@ load_dotenv(ROOT / ".env")
 
 
 def _env(name: str, default: str = "") -> str:
-    return os.getenv(name, default).strip()
+    raw = os.getenv(name, default).strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {'"', "'"}:
+        raw = raw[1:-1].strip()
+    return raw
 
 
 def _is_local_url(value: str) -> bool:

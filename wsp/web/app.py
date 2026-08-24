@@ -113,6 +113,10 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 "bot": bot.is_ready(),
                 "user": str(bot.user) if bot.user else None,
                 "guilds": len(bot.guilds),
+                "token_configured": bool(settings.discord_token),
+                "guild_id": settings.guild_id or None,
+                "commands": getattr(bot, "synced_commands", []),
+                "bot_error": getattr(bot, "last_error", None),
             }
         )
 
