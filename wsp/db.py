@@ -212,6 +212,19 @@ CREATE TABLE IF NOT EXISTS discipline (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS discipline_appeals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    discipline_id INTEGER NOT NULL,
+    discord_id TEXT NOT NULL,
+    statement TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reviewer_id TEXT,
+    review_note TEXT,
+    created_at INTEGER NOT NULL,
+    reviewed_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS tickets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id TEXT NOT NULL,
@@ -928,6 +941,42 @@ class Database:
 
     async def get_discipline(self, record_id: int) -> aiosqlite.Row | None:
         return await self.fetchone("SELECT * FROM discipline WHERE id = ?", (record_id,))
+
+    async def create_appeal(self, guild_id: int, discipline_id: int, discord_id: int, statement: str) -> int:
+        cur = await self.execute(
+            """
+            INSERT INTO discipline_appeals
+                (guild_id, discipline_id, discord_id, statement, status, created_at)
+            VALUES (?, ?, ?, ?, 'pending', ?)
+            """,
+            (str(guild_id), discipline_id, str(discord_id), statement, now_ts()),
+        )
+        return int(cur.lastrowid)
+
+    async def get_appeal(self, appeal_id: int) -> aiosqlite.Row | None:
+        return await self.fetchone("SELECT * FROM discipline_appeals WHERE id = ?", (appeal_id,))
+
+    async def get_appeal_for_discipline(self, discipline_id: int) -> aiosqlite.Row | None:
+        return await self.fetchone(
+            "SELECT * FROM discipline_appeals WHERE discipline_id = ? ORDER BY created_at DESC LIMIT 1",
+            (discipline_id,),
+        )
+
+    async def list_appeals(self, guild_id: int, status: str | None = "pending") -> list[aiosqlite.Row]:
+        if status:
+            return await self.fetchall(
+                "SELECT * FROM discipline_appeals WHERE guild_id = ? AND status = ? ORDER BY created_at DESC",
+                (str(guild_id), status),
+            )
+        return await self.fetchall(
+            "SELECT * FROM discipline_appeals WHERE guild_id = ? ORDER BY created_at DESC LIMIT 50",
+            (str(guild_id),),
+        )
+
+    async def update_appeal(self, appeal_id: int, **fields: Any) -> None:
+        assignments = ", ".join(f"{k} = ?" for k in fields)
+        values = list(fields.values()) + [appeal_id]
+        await self.execute(f"UPDATE discipline_appeals SET {assignments} WHERE id = ?", values)
 
     # ── tickets ─────────────────────────────────────────────
     async def create_ticket(self, guild_id: int, opener_id: int, ticket_type: str, channel_id: int | None) -> int:

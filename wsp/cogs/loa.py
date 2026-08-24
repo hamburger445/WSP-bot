@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from wsp.constants import COLOR_GOLD, PermissionLevel
 from wsp.db import now_ts
-from wsp.embeds import add_fields, base_embed, error_embed, success_embed, ts, warning_embed
+from wsp.embeds import add_fields, base_embed, error_embed, success_embed, ts
 from wsp.permissions import has_level
 from wsp.utils import ensure_personnel, mention_or_id, parse_date
 
@@ -25,7 +25,7 @@ class LOA(commands.Cog):
 
     loa = app_commands.Group(name="loa", description="Leave of Absence")
 
-    @loa.command(name="request", description="Submit a leave of absence request.")
+    @loa.command(name="request", description="Submit a leave request. Dates: YYYY-MM-DD.")
     async def request(
         self,
         interaction: discord.Interaction,
@@ -71,13 +71,23 @@ class LOA(commands.Cog):
             ],
         )
         view = LOADecisionView(loa_id)
-        await interaction.response.send_message(embed=success_embed("Request submitted", f"LOA `#{loa_id}` is pending HR review."), ephemeral=True)
+        await interaction.response.send_message(
+            embed=success_embed(
+                "Request submitted",
+                f"LOA `#{loa_id}` is on file. You will be notified when a decision is made.",
+            ),
+            ephemeral=True,
+        )
         channel_id = cfg.channel_id("loa")
+        hr_id = cfg.channel_id("hr_log")
         channel = interaction.guild.get_channel(channel_id) if channel_id else None
+        review_on_loa = not hr_id or hr_id == channel_id
         if isinstance(channel, discord.TextChannel):
-            await channel.send(embed=public, view=view)
-        else:
-            await self.bot.notify(interaction.guild, "hr_log", public)
+            await channel.send(embed=public, view=view if review_on_loa else None)
+        if hr_id and not review_on_loa:
+            await self.bot.notify(interaction.guild, "hr_log", public, view=view)
+        elif not isinstance(channel, discord.TextChannel):
+            await self.bot.notify(interaction.guild, "hr_log", public, view=view)
 
     @loa.command(name="approve", description="Approve a pending LOA request.")
     @has_level(PermissionLevel.HR)
@@ -108,7 +118,11 @@ class LOA(commands.Cog):
     async def loa_menu(self, interaction: discord.Interaction) -> None:
         embed = base_embed(
             "Leave of Absence",
-            "Submit a request with `/loa request` using dates `YYYY-MM-DD`.\nApproved LOA prevents missed-quota flags for that window.\nHR uses `/loa approve` and `/loa deny`, or the buttons on the request post.",
+            "Need time away from duty? Use **Submit request** below, or `/loa request`.\n\n"
+            "Dates must be `YYYY-MM-DD` (example: `2026-09-01`). Include a reason.\n"
+            "Approved leave covers you for weekly quota during those dates.\n"
+            "You will be notified when your request is reviewed.\n\n"
+            "Use **My requests** to check status.",
         )
         await interaction.response.send_message(embed=embed, view=LOAMenuView(), ephemeral=True)
 
@@ -254,12 +268,20 @@ async def _decide_loa(bot: WSPBot, interaction: discord.Interaction, loa_id: int
     await _reply(interaction, embed)
     await bot.notify(interaction.guild, "loa", embed)
     await bot.notify(interaction.guild, "notifications", embed)
-    member = interaction.guild.get_member(int(row["discord_id"]))
-    if member:
-        try:
-            await member.send(embed=embed)
-        except discord.HTTPException:
-            pass
+    if status == "approved":
+        member_embed = success_embed(
+            "Leave approved",
+            f"Your LOA `#{loa_id}` is approved.\n{ts(row['start_date'])} → {ts(row['end_date'])}",
+        )
+    else:
+        member_embed = error_embed(
+            "Leave request not approved",
+            f"Your LOA `#{loa_id}` was not approved.",
+        )
+    if note:
+        member_embed.add_field(name="Note", value=note, inline=False)
+    member = await bot.fetch_guild_user(interaction.guild, int(row["discord_id"]))
+    await bot.try_dm(member, member_embed)
 
 
 async def _reply(interaction: discord.Interaction, embed: discord.Embed) -> None:

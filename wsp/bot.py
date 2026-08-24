@@ -56,11 +56,13 @@ class WSPBot(commands.Bot):
         from wsp.views.shifts import ShiftMenuView
         from wsp.views.tickets import TicketControlsView, TicketPanelView
         from wsp.cogs.loa import DenyLOAButton, ApproveLOAButton
+        from wsp.views.discipline import AppealOpenButton, AppealOverturnButton, AppealUpholdButton
 
         self.add_view(TicketPanelView())
         self.add_view(TicketControlsView())
         self.add_view(ShiftMenuView())
         self.add_dynamic_items(ApproveLOAButton, DenyLOAButton)
+        self.add_dynamic_items(AppealOpenButton, AppealUpholdButton, AppealOverturnButton)
         self.tree.on_error = self.on_app_command_error
 
         for module in COG_MODULES:
@@ -157,19 +159,54 @@ class WSPBot(commands.Bot):
     def invalidate_config(self, guild_id: int) -> None:
         self._config_cache.pop(guild_id, None)
 
-    async def notify(self, guild: discord.Guild | None, channel_key: str, embed: discord.Embed) -> None:
+    async def notify(
+        self,
+        guild: discord.Guild | None,
+        channel_key: str,
+        embed: discord.Embed,
+        view: discord.ui.View | None = None,
+    ) -> discord.Message | None:
         if guild is None:
-            return
+            return None
         cfg = await self.guild_config(guild.id)
         channel_id = cfg.channel_id(channel_key)
         if not channel_id:
-            return
+            return None
         channel = guild.get_channel(channel_id)
         if isinstance(channel, discord.TextChannel):
             try:
-                await channel.send(embed=embed)
+                return await channel.send(embed=embed, view=view)
             except discord.HTTPException as exc:
                 log.warning("Failed to send notification to %s: %s", channel_key, exc)
+        return None
+
+    async def try_dm(
+        self,
+        user: discord.abc.User | None,
+        embed: discord.Embed,
+        view: discord.ui.View | None = None,
+    ) -> bool:
+        if user is None:
+            return False
+        try:
+            await user.send(embed=embed, view=view)
+            return True
+        except discord.HTTPException:
+            return False
+
+    async def fetch_guild_user(self, guild: discord.Guild | None, user_id: int) -> discord.abc.User | None:
+        if guild is not None:
+            member = guild.get_member(user_id)
+            if member is not None:
+                return member
+            try:
+                return await guild.fetch_member(user_id)
+            except discord.HTTPException:
+                pass
+        try:
+            return await self.fetch_user(user_id)
+        except discord.HTTPException:
+            return None
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         from discord import app_commands

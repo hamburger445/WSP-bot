@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from wsp.constants import COLOR_NAVY
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
-from wsp.utils import current_shift_seconds, ensure_personnel
+from wsp.utils import current_shift_seconds, ensure_personnel, mention_or_id
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -34,9 +35,27 @@ class ShiftMenuView(discord.ui.View):
     async def end(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await _end_shift(interaction)
 
-    @discord.ui.button(label="My history", style=discord.ButtonStyle.secondary, custom_id="wsp:shift:history")
+    @discord.ui.button(label="My history", style=discord.ButtonStyle.secondary, custom_id="wsp:shift:history", row=1)
     async def history(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await _history(interaction)
+
+    @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.secondary, custom_id="wsp:shift:board", row=1)
+    async def board(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Unavailable"), ephemeral=True)
+            return
+        bot: WSPBot = interaction.client  # type: ignore[assignment]
+        embed = await build_leaderboard(bot, interaction.guild)
+        await interaction.response.send_message(embed=embed)
+
+    @discord.ui.button(label="Refresh board", style=discord.ButtonStyle.primary, custom_id="wsp:shift:refresh", row=1)
+    async def refresh(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Unavailable"), ephemeral=True)
+            return
+        bot: WSPBot = interaction.client  # type: ignore[assignment]
+        embed = await build_duty_board(bot, interaction.guild)
+        await interaction.response.edit_message(embed=embed, view=ShiftMenuView())
 
 
 class ShiftStartModal(discord.ui.Modal, title="Start duty shift"):
@@ -44,6 +63,68 @@ class ShiftStartModal(discord.ui.Modal, title="Start duty shift"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await start_shift_for(interaction, str(self.callsign.value).strip())
+
+
+async def build_duty_board(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
+    embed = base_embed(
+        "Duty board",
+        "Use the buttons to start, pause, resume, or end **your** shift. "
+        "You will be asked for a callsign when you start. Confirmations stay private to you.\n"
+        "Everyone can see who is on duty and the leaderboard.",
+        color=COLOR_NAVY,
+    )
+    active = await bot.db.list_active_shifts(guild.id)
+    if not active:
+        embed.add_field(name="On duty", value="No troopers are currently on duty.", inline=False)
+    else:
+        lines = []
+        for row in active[:15]:
+            lines.append(
+                f"{mention_or_id(guild, row['discord_id'])} `{row['callsign'] or '—'}` "
+                f"**{row['status']}** • {format_duration(current_shift_seconds(row))}"
+            )
+        embed.add_field(name="On duty", value="\n".join(lines)[:1024], inline=False)
+    board = await bot.db.shift_leaderboard(guild.id, limit=10)
+    if not board:
+        embed.add_field(name="Leaderboard", value="No completed shifts yet.", inline=False)
+    else:
+        embed.add_field(
+            name="Leaderboard",
+            value="\n".join(
+                f"**{i + 1}.** {mention_or_id(guild, r['discord_id'])} — "
+                f"{format_duration(r['total_seconds'])} ({r['shift_count']} shifts)"
+                for i, r in enumerate(board)
+            )[:1024],
+            inline=False,
+        )
+    return embed
+
+
+async def build_leaderboard(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
+    rows = await bot.db.shift_leaderboard(guild.id)
+    embed = base_embed("Duty leaderboard", color=COLOR_NAVY)
+    if not rows:
+        embed.description = "No completed shifts yet."
+    else:
+        embed.description = "\n".join(
+            f"**{i + 1}.** {mention_or_id(guild, r['discord_id'])} — "
+            f"{format_duration(r['total_seconds'])} ({r['shift_count']} shifts)"
+            for i, r in enumerate(rows)
+        )
+    return embed
+
+
+async def _maybe_refresh_board(interaction: discord.Interaction) -> None:
+    if not interaction.guild or interaction.message is None:
+        return
+    if interaction.message.author != interaction.client.user:
+        return
+    bot: WSPBot = interaction.client  # type: ignore[assignment]
+    try:
+        embed = await build_duty_board(bot, interaction.guild)
+        await interaction.message.edit(embed=embed, view=ShiftMenuView())
+    except discord.HTTPException:
+        pass
 
 
 async def start_shift_for(interaction: discord.Interaction, callsign: str) -> None:
@@ -76,6 +157,7 @@ async def start_shift_for(interaction: discord.Interaction, callsign: str) -> No
     embed = success_embed("Shift started", f"**{rank_name or 'Trooper'}** `{callsign}` is now on duty.")
     add_fields(embed, [("Started", ts(now_ts()), True), ("Shift ID", f"#{shift_id}", True)])
     await interaction.response.send_message(embed=embed, ephemeral=True)
+    await _maybe_refresh_board(interaction)
 
 
 async def _pause_shift(interaction: discord.Interaction) -> None:
@@ -92,6 +174,7 @@ async def _pause_shift(interaction: discord.Interaction) -> None:
         return
     await bot.db.update_shift(row["id"], status="paused", pause_started=now_ts())
     await interaction.response.send_message(embed=success_embed("Shift paused", "Resume when you return to duty."), ephemeral=True)
+    await _maybe_refresh_board(interaction)
 
 
 async def _resume_shift(interaction: discord.Interaction) -> None:
@@ -111,6 +194,7 @@ async def _resume_shift(interaction: discord.Interaction) -> None:
         paused_seconds=int(row["paused_seconds"] or 0) + extra,
     )
     await interaction.response.send_message(embed=success_embed("Shift resumed"), ephemeral=True)
+    await _maybe_refresh_board(interaction)
 
 
 async def _end_shift(interaction: discord.Interaction) -> None:
@@ -151,6 +235,7 @@ async def _end_shift(interaction: discord.Interaction) -> None:
         ],
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
+    await _maybe_refresh_board(interaction)
 
 
 async def _history(interaction: discord.Interaction) -> None:

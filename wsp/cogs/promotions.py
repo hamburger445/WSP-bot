@@ -111,7 +111,18 @@ class Promotions(commands.Cog):
                 ("Authorized by", authorizing.mention, True),
             ],
         )
-        await interaction.response.send_message(embed=success_embed(f"{title} recorded", f"{member.mention} is now **{rank}**."), ephemeral=True)
+        dm = base_embed(
+            title,
+            f"Your rank is now **{rank}**.\n{from_rank or 'Unassigned'} → **{rank}**",
+            color=color,
+        )
+        dm.add_field(name="Reason", value=reason, inline=False)
+        dm_ok = await self.bot.try_dm(member, dm)
+        note = "" if dm_ok else " Could not DM the member (DMs may be closed)."
+        await interaction.response.send_message(
+            embed=success_embed(f"{title} recorded", f"{member.mention} is now **{rank}**.{note}"),
+            ephemeral=True,
+        )
         await self.bot.notify(guild, "promotions", public)
         await self.bot.notify(guild, "notifications", public)
         await self.bot.notify(guild, "command_log", public)

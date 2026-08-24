@@ -36,10 +36,10 @@ class Profile(commands.Cog):
             return
         record = await ensure_personnel(self.bot, target)
         sensitive = level >= SENSITIVE_PROFILE_LEVEL or target.id == interaction.user.id
-        # Troopers viewing themselves still hide command/HR notes unless HR+
         notes_ok = level >= SENSITIVE_PROFILE_LEVEL
+        self_view = target.id == interaction.user.id
         embed = await profile_overview(self.bot, interaction.guild, target, record, sensitive)
-        view = ProfileView(target.id, notes_ok, sensitive)
+        view = ProfileView(target.id, notes_ok, sensitive, self_view)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
@@ -70,28 +70,32 @@ async def profile_overview(bot: WSPBot, guild: discord.Guild, member: discord.Me
 
 
 class ProfileView(discord.ui.View):
-    def __init__(self, target_id: int, notes_ok: bool, sensitive: bool) -> None:
+    def __init__(self, target_id: int, notes_ok: bool, sensitive: bool, self_view: bool) -> None:
         super().__init__(timeout=180)
         self.target_id = target_id
         self.notes_ok = notes_ok
         self.sensitive = sensitive
-        self.add_item(ProfileSelect(target_id, notes_ok, sensitive))
+        self.self_view = self_view
+        self.add_item(ProfileSelect(target_id, notes_ok, sensitive, self_view))
 
 
 class ProfileSelect(discord.ui.Select):
-    def __init__(self, target_id: int, notes_ok: bool, sensitive: bool) -> None:
+    def __init__(self, target_id: int, notes_ok: bool, sensitive: bool, self_view: bool) -> None:
         self.target_id = target_id
         self.notes_ok = notes_ok
         self.sensitive = sensitive
+        self.self_view = self_view
         options = [
             discord.SelectOption(label="Personnel information", value="info"),
             discord.SelectOption(label="Rank history", value="ranks"),
             discord.SelectOption(label="Training", value="training"),
             discord.SelectOption(label="Quota", value="quota"),
-            discord.SelectOption(label="Discipline", value="discipline"),
-            discord.SelectOption(label="Notes", value="notes"),
-            discord.SelectOption(label="Activity", value="activity"),
         ]
+        if notes_ok or self_view:
+            options.append(discord.SelectOption(label="Discipline", value="discipline"))
+        if notes_ok:
+            options.append(discord.SelectOption(label="Notes", value="notes"))
+        options.append(discord.SelectOption(label="Activity", value="activity"))
         super().__init__(placeholder="Open a personnel section…", options=options)
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -106,17 +110,25 @@ class ProfileSelect(discord.ui.Select):
             await interaction.response.send_message(embed=error_embed("Not found"), ephemeral=True)
             return
         choice = self.values[0]
-        if choice in {"discipline", "notes"} and not self.notes_ok:
+        if choice == "notes" and not self.notes_ok:
             await interaction.response.send_message(
-                embed=error_embed("Restricted", "Sensitive personnel sections require HR or Command."),
+                embed=error_embed("Restricted", "Personnel notes require HR or Command."),
                 ephemeral=True,
             )
             return
-        embed = await _section_embed(bot, guild, member, record, choice)
+        if choice == "discipline" and not (self.notes_ok or self.self_view):
+            await interaction.response.send_message(
+                embed=error_embed("Restricted", "Disciplinary records require HR or Command."),
+                ephemeral=True,
+            )
+            return
+        embed = await _section_embed(bot, guild, member, record, choice, self.self_view)
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
-async def _section_embed(bot: WSPBot, guild: discord.Guild, member: discord.Member, record, choice: str) -> discord.Embed:
+async def _section_embed(
+    bot: WSPBot, guild: discord.Guild, member: discord.Member, record, choice: str, self_view: bool = False
+) -> discord.Embed:
     if choice == "info":
         return await profile_overview(bot, guild, member, record, True)
     if choice == "ranks":
@@ -156,7 +168,18 @@ async def _section_embed(bot: WSPBot, guild: discord.Guild, member: discord.Memb
     if choice == "discipline":
         rows = await bot.db.list_discipline(guild.id, member.id)
         embed = base_embed(f"Discipline  •  {member.display_name}")
-        embed.description = "\n".join(f"{ts_rel(r['created_at'])} **{r['action']}** — {r['reason']}" for r in rows[:12]) or "No disciplinary records."
+        if not rows:
+            embed.description = "No disciplinary records."
+        else:
+            lines = []
+            for r in rows[:12]:
+                state = "active" if r["active"] else "inactive"
+                appeal = await bot.db.get_appeal_for_discipline(int(r["id"]))
+                extra = f" • appeal `{appeal['status']}`" if appeal else ""
+                lines.append(f"`#{r['id']}` {ts_rel(r['created_at'])} **{r['action']}** ({state}){extra}\n{r['reason']}")
+            embed.description = "\n".join(lines)
+            if self_view:
+                embed.set_footer(text="Appeal an active record with /appeal and the record number.")
         return embed
     if choice == "notes":
         rows = await bot.db.list_notes(record["id"])

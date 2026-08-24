@@ -8,12 +8,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from wsp.constants import COLOR_NAVY, PermissionLevel
+from wsp.constants import PermissionLevel
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.permissions import has_level
 from wsp.utils import current_shift_seconds, mention_or_id
-from wsp.views.shifts import ShiftMenuView, start_shift_for
+from wsp.views.shifts import ShiftMenuView, build_duty_board, build_leaderboard, start_shift_for
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -25,32 +25,13 @@ class Shifts(commands.Cog):
 
     shift = app_commands.Group(name="shift", description="Duty shift management")
 
-    @shift.command(name="menu", description="Open shift controls and view your duty totals.")
+    @shift.command(name="menu", description="Post the public duty board and leaderboard.")
     async def menu(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
-        row = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
-        totals = await self.bot.db.shift_totals(interaction.guild.id, interaction.user.id)
-        recent = await self.bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=5)
-        embed = base_embed("Duty board", "Start, pause, or end your shift. Totals persist across bot restarts.", color=COLOR_NAVY)
-        if row:
-            embed.add_field(name="Current shift", value=f"`#{row['id']}` **{row['status']}** {row['callsign'] or ''}\nElapsed {format_duration(current_shift_seconds(row))}", inline=False)
-        else:
-            embed.add_field(name="Current shift", value="Off duty", inline=True)
-        if totals:
-            embed.add_field(name="All-time duty", value=format_duration(totals["total_seconds"]), inline=True)
-            embed.add_field(name="Completed shifts", value=str(totals["shift_count"]), inline=True)
-        if recent:
-            embed.add_field(
-                name="Recent",
-                value="\n".join(
-                    f"`#{r['id']}` {r['status']} {format_duration(r['duration_seconds'] or current_shift_seconds(r))} {ts_rel(r['start_time'])}"
-                    for r in recent
-                ),
-                inline=False,
-            )
-        await interaction.response.send_message(embed=embed, view=ShiftMenuView(), ephemeral=True)
+        embed = await build_duty_board(self.bot, interaction.guild)
+        await interaction.response.send_message(embed=embed, view=ShiftMenuView())
 
     @shift.command(name="status", description="Show who is currently on duty.")
     async def status(self, interaction: discord.Interaction) -> None:
@@ -74,15 +55,7 @@ class Shifts(commands.Cog):
     async def leaderboard(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             return
-        rows = await self.bot.db.shift_leaderboard(interaction.guild.id)
-        embed = base_embed("Duty leaderboard")
-        if not rows:
-            embed.description = "No completed shifts yet."
-        else:
-            embed.description = "\n".join(
-                f"**{i+1}.** {mention_or_id(interaction.guild, r['discord_id'])} — {format_duration(r['total_seconds'])} ({r['shift_count']} shifts)"
-                for i, r in enumerate(rows)
-            )
+        embed = await build_leaderboard(self.bot, interaction.guild)
         await interaction.response.send_message(embed=embed)
 
     @shift.command(name="history", description="View shift history for a member.")
