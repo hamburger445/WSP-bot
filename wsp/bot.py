@@ -31,6 +31,7 @@ COG_MODULES = [
     "wsp.cogs.tickets",
     "wsp.cogs.vehicles",
     "wsp.cogs.dashboard",
+    "wsp.cogs.help",
     "wsp.cogs.tasks",
 ]
 
@@ -66,22 +67,50 @@ class WSPBot(commands.Bot):
             await self.load_extension(module)
             log.info("Loaded cog %s", module)
 
+        self._prepare_slash_menu()
+
+    def _prepare_slash_menu(self) -> None:
+        """Keep slash commands in guild / menus, not DMs or user-install apps."""
+        for command in self.tree.get_commands():
+            command.guild_only = True
+            try:
+                command.allowed_contexts = app_commands.AppCommandContext(
+                    guild=True, dm_channel=False, private_channel=False
+                )
+                command.allowed_installs = app_commands.AppInstallationType(guild=True, user=False)
+            except Exception:
+                pass
+
+    def _flatten_names(self, commands) -> list[str]:
+        names: list[str] = []
+        for cmd in commands:
+            names.append(cmd.name)
+            options = getattr(cmd, "options", None) or []
+            for opt in options:
+                if getattr(opt, "type", None) == discord.AppCommandOptionType.subcommand:
+                    names.append(f"{cmd.name} {opt.name}")
+                elif getattr(opt, "type", None) == discord.AppCommandOptionType.subcommand_group:
+                    for child in getattr(opt, "options", []) or []:
+                        names.append(f"{cmd.name} {opt.name} {child.name}")
+        return names
+
     async def sync_app_commands(self) -> None:
         guild_ids: set[int] = {g.id for g in self.guilds}
         if self.settings.guild_id:
             guild_ids.add(self.settings.guild_id)
         if not guild_ids:
             synced = await self.tree.sync()
-            self.synced_commands = [c.name for c in synced]
+            self.synced_commands = self._flatten_names(synced)
             log.info("Synced %s global commands: %s", len(synced), self.synced_commands)
             return
         names: list[str] = []
         for gid in guild_ids:
             guild = discord.Object(id=gid)
+            self.tree.clear_commands(guild=guild)
             self.tree.copy_global_to(guild=guild)
             synced = await self.tree.sync(guild=guild)
-            names = [c.name for c in synced]
-            log.info("Synced %s commands to guild %s: %s", len(synced), gid, names)
+            names = self._flatten_names(synced)
+            log.info("Synced %s root commands (%s menu entries) to guild %s: %s", len(synced), len(names), gid, names)
         self.synced_commands = names
 
     async def on_ready(self) -> None:
