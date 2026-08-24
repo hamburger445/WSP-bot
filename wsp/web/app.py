@@ -87,6 +87,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             "community": "Lakeville Roleplay",
             "bot_ready": bot.is_ready(),
             "nav": NAV,
+            "nav_groups": NAV_GROUPS,
         }
         payload.update(extra)
         return payload
@@ -389,17 +390,39 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
     return app
 
 
-NAV = [
-    ("overview", "/", "Overview"),
-    ("personnel", "/personnel", "Personnel"),
-    ("shifts", "/shifts", "Shifts"),
-    ("quota", "/quota", "Quota"),
-    ("loa", "/loa", "LOA"),
-    ("supervision", "/supervision", "Supervision"),
-    ("probation", "/probation", "Probation"),
-    ("fastpass", "/fastpass", "Fast-pass"),
-    ("discipline", "/discipline", "Discipline"),
-    ("tickets", "/tickets", "Tickets"),
-    ("audit", "/audit", "Audit"),
-    ("settings", "/settings", "Settings"),
+NAV_GROUPS = [
+    (
+        "Operations",
+        [
+            ("overview", "/", "Overview"),
+            ("shifts", "/shifts", "Shifts"),
+            ("quota", "/quota", "Quota"),
+            ("loa", "/loa", "LOA"),
+        ],
+    ),
+    (
+        "People",
+        [
+            ("personnel", "/personnel", "Personnel"),
+            ("supervision", "/supervision", "Supervision"),
+            ("probation", "/probation", "Probation"),
+            ("fastpass", "/fastpass", "Fast-pass"),
+        ],
+    ),
+    (
+        "Records",
+        [
+            ("discipline", "/discipline", "Discipline"),
+            ("tickets", "/tickets", "Tickets"),
+            ("audit", "/audit", "Audit"),
+        ],
+    ),
+    (
+        "System",
+        [
+            ("settings", "/settings", "Settings"),
+        ],
+    ),
 ]
+
+NAV = [item for _group, items in NAV_GROUPS for item in items]

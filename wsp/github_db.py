@@ -55,11 +55,11 @@ class GitHubDatabase:
             log.info("Local database already has data at %s; keeping it and using GitHub as backup.", dest)
             return False
         async with self._lock:
-            payload = await self._get_file()
+            payload = await self._get_file(timeout=8)
             if payload is None:
                 log.info("No database on GitHub yet; a snapshot will be pushed after the bot has data.")
                 return False
-            raw = await self._download_bytes(payload)
+            raw = await self._download_bytes(payload, timeout=8)
             if not raw:
                 return False
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -123,8 +123,8 @@ class GitHubDatabase:
 
         self._debounced = asyncio.create_task(_run())
 
-    async def _get_file(self) -> dict | None:
-        async with httpx.AsyncClient(timeout=60) as client:
+    async def _get_file(self, timeout: float = 60) -> dict | None:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(
                 self._contents_url(),
                 headers=self._headers(),
@@ -137,10 +137,10 @@ class GitHubDatabase:
             return None
         return response.json()
 
-    async def _download_bytes(self, payload: dict) -> bytes:
+    async def _download_bytes(self, payload: dict, timeout: float = 60) -> bytes:
         url = payload.get("download_url")
         if url:
-            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 response = await client.get(url, headers=self._headers())
             response.raise_for_status()
             return response.content

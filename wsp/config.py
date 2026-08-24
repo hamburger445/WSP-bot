@@ -88,6 +88,13 @@ class Settings:
         self.github_db_branch = _env("GITHUB_DB_BRANCH", "data")
         self.github_db_path = _env("GITHUB_DB_PATH", "data/wsp.db").lstrip("/")
 
+    def keep_alive_origin(self) -> str:
+        """Public HTTPS origin used to ping /health so hosts do not idle-sleep."""
+        url = self.dashboard_base_url.rstrip("/")
+        if not url or _is_local_url(url):
+            return ""
+        return url
+
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.backups_dir.mkdir(parents=True, exist_ok=True)

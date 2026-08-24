@@ -3,11 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07090d">
   <title>Sign in · WSP Command Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/app.css?v=3">
+  <link rel="stylesheet" href="/static/app.css?v=4">
 </head>
 <body class="login-body">
   <div class="lightbar"></div>
@@ -16,7 +18,7 @@
       <p class="kicker">Lakeville Roleplay</p>
       <p class="login-state">Wisconsin</p>
       <h1>State Patrol</h1>
-      <p class="lede">Authorized personnel only. All sign-ins are logged against the department audit file.</p>
+      <p class="lede">Authorized personnel only. Sign-ins are logged against the department audit file.</p>
       <div class="login-status">
         <div class="signal {{ 'live' if bot_ready else 'down' }}"></div>
         <span>{{ 'Gateway connected' if bot_ready else 'Bot offline — check Render logs and DISCORD_TOKEN' }}</span>

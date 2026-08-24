@@ -246,6 +246,9 @@ Check `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DASHBOARD_BASE_URL`, and th
 **Privileged intents error**  
 Enable Server Members and Message Content in the Developer Portal.
 
+**Bot keeps saying shutting down / goes offline**  
+The process logs a stop message only when the host sends SIGTERM (deploy, sleep, or a failed health check). The HTTP server now binds before a slow GitHub restore can time out, and it pings `/health` every 8 minutes so Render does not idle-sleep. Use a **paid** instance for true 24/7. Set `GITHUB_TOKEN` and `DASHBOARD_BASE_URL` on Render. Check `/health` — if `ok` is true the web service is up even while Discord reconnects.
+
 **Database locked / lost data**  
 Stop extra `python main.py` processes. Restore from `data/backups/`. Do not delete `data/wsp.db` unless you intend a full reset.
 

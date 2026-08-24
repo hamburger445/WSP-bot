@@ -3,11 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07090d">
   <title>{% block title %}Command Center{% endblock %} · WSP LVRP</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/app.css?v=3">
+  <link rel="stylesheet" href="/static/app.css?v=4">
 </head>
 <body>
   <div class="lightbar"></div>
@@ -21,9 +23,14 @@
         </div>
       </div>
       <nav>
-        {% for key, href, label in nav %}
-          {% if key != 'settings' or (user and user.level >= 5) %}
-          <a class="nav-link{% if page == key %} is-active{% endif %}" href="{{ href }}">{{ label }}</a>
+        {% for group, items in nav_groups %}
+          {% if group != 'System' or (user and user.level >= 5) %}
+          <p class="nav-group">{{ group }}</p>
+          {% for key, href, label in items %}
+            {% if key != 'settings' or (user and user.level >= 5) %}
+            <a class="nav-link{% if page == key %} is-active{% endif %}" href="{{ href }}">{{ label }}</a>
+            {% endif %}
+          {% endfor %}
           {% endif %}
         {% endfor %}
       </nav>
@@ -35,10 +42,23 @@
     <main class="stage">
       <header class="top">
         <div>
-          <p class="eyebrow">Division of State Patrol  ·  Command Center</p>
+          <p class="eyebrow">Division of State Patrol · Command Center</p>
           <h1>{% block heading %}Overview{% endblock %}</h1>
         </div>
         <div class="who">
+          <label class="jump">
+            <span>Jump to</span>
+            <input type="search" list="page-jump" placeholder="Search pages…" autocomplete="off">
+            <datalist id="page-jump">
+              {% for group, items in nav_groups %}
+                {% for key, href, label in items %}
+                  {% if key != 'settings' or (user and user.level >= 5) %}
+                  <option value="{{ href }}">{{ label }}</option>
+                  {% endif %}
+                {% endfor %}
+              {% endfor %}
+            </datalist>
+          </label>
           {% if user %}
             <div>
               <strong>{{ user.username }}</strong>
@@ -54,5 +74,46 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <script>
+    const jump = document.querySelector(".jump input");
+    if (jump) {
+      const go = () => {
+        const match = [...document.querySelectorAll("#page-jump option")].find(
+          (opt) => opt.value === jump.value || opt.textContent.toLowerCase() === jump.value.toLowerCase()
+        );
+        if (match) window.location.href = match.value;
+      };
+      jump.addEventListener("change", go);
+      jump.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") go();
+      });
+    }
+    document.querySelectorAll(".panel").forEach((panel) => {
+      const table = panel.querySelector("table tbody");
+      if (!table) return;
+      const rows = [...table.querySelectorAll("tr")];
+      const bind = (input) => {
+        input.addEventListener("input", (event) => {
+          const q = event.target.value.toLowerCase().trim();
+          rows.forEach((row) => {
+            row.hidden = q.length > 0 && !row.textContent.toLowerCase().includes(q);
+          });
+        });
+      };
+      const existing = panel.querySelector("[data-filter-table]");
+      if (existing) {
+        bind(existing);
+        return;
+      }
+      if (rows.length < 8) return;
+      const bar = document.createElement("div");
+      bar.className = "toolbar";
+      bar.innerHTML = '<input class="search" data-filter-table type="search" placeholder="Filter this table…">';
+      const heading = panel.querySelector("h2");
+      if (heading) heading.insertAdjacentElement("afterend", bar);
+      else panel.prepend(bar);
+      bind(bar.querySelector("input"));
+    });
+  </script>
 </body>
 </html>
