@@ -57,7 +57,8 @@ STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/dashboard` `/audit`",
     ]),
     ("Setup", "Owners and command staff", [
-        "`/setup` `/setupserver` `/verifysetup` `/config` `/sync` `/resetserver`",
+        "`/setup menu` `roles` `ranks` `channels` `categories` `bind` `panel`",
+        "`/setupserver` `/verifysetup` `/config` `/sync` `/resetserver`",
     ]),
 ]
 

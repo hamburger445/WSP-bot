@@ -1,4 +1,4 @@
-"""Owner setup, verification, and configuration commands."""
+"""Owner setup: bind existing Discord role and channel IDs. Never creates them."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from wsp.constants import COLOR_GOLD, COLOR_NAVY, DEFAULT_RANKS, PermissionLevel
+from wsp.constants import COLOR_GOLD, COLOR_NAVY, PermissionLevel
 from wsp.embeds import add_fields, base_embed, error_embed, success_embed, warning_embed
 from wsp.permissions import has_level, is_owner
 
@@ -16,157 +16,240 @@ if TYPE_CHECKING:
     from wsp.bot import WSPBot
 
 ROLE_SPECS = [
-    ("wsp", "WSP", 0x0D2137, "Wisconsin State Patrol membership"),
-    ("hr", "WSP | HR", 0xC9A227, "Human Resources"),
-    ("command", "WSP | Command", 0x8B1E3F, "Command staff"),
-    ("supervisor", "WSP | Supervisor", 0x3D5A80, "Field supervision"),
-    ("superintendent", "WSP | Superintendent", 0xC9A227, "Department head"),
+    ("wsp", "Department membership"),
+    ("hr", "Human Resources"),
+    ("command", "Command staff"),
+    ("supervisor", "Field supervision"),
+    ("superintendent", "Department head"),
 ]
 
-RANK_COLORS = {
-    "Probationary Trooper": 0x6B7280,
-    "Trooper": 0x3D5A80,
-    "Senior Trooper": 0x3D5A80,
-    "Master Trooper": 0x2E5A88,
-    "Corporal": 0x1F6B4A,
-    "Sergeant": 0x1F6B4A,
-    "Lieutenant": 0xC9782A,
-    "Captain": 0xC9782A,
-    "Major": 0x8B1E3F,
-    "Lieutenant Colonel": 0x8B1E3F,
-    "Colonel": 0x8B1E3F,
-    "Superintendent": 0xC9A227,
-}
+RANK_BIND = [
+    ("probationary_trooper", "Probationary Trooper"),
+    ("trooper", "Trooper"),
+    ("senior_trooper", "Senior Trooper"),
+    ("master_trooper", "Master Trooper"),
+    ("corporal", "Corporal"),
+    ("sergeant", "Sergeant"),
+    ("lieutenant", "Lieutenant"),
+    ("captain", "Captain"),
+    ("major", "Major"),
+    ("lieutenant_colonel", "Lieutenant Colonel"),
+    ("colonel", "Colonel"),
+    ("superintendent_rank", "Superintendent"),
+]
 
 CHANNEL_SPECS = [
-    ("applications", "wsp-applications", "Fast-pass and application traffic"),
-    ("promotions", "wsp-promotions", "Promotion and demotion notices"),
-    ("discipline", "wsp-discipline", "Disciplinary actions"),
-    ("loa", "wsp-loa", "Leave of absence requests"),
-    ("quota", "wsp-quota", "Quota reminders and reports"),
-    ("notifications", "wsp-notifications", "Department notifications"),
-    ("hr_log", "wsp-hr-log", "HR action log"),
-    ("command_log", "wsp-command-log", "Command action log"),
-    ("audit_log", "wsp-audit-log", "Full audit trail"),
-    ("fastpass", "wsp-fastpass", "Fast-pass evaluations"),
-    ("supervision", "wsp-supervision", "Ride-along / supervision"),
-    ("probation", "wsp-probation", "Probationary period tracking"),
-    ("tickets_log", "wsp-ticket-log", "Ticket transcripts and closures"),
-    ("ticket_panel", "wsp-tickets", "Public ticket panel"),
-    ("resignations", "wsp-resignations", "Resignation notices"),
+    ("applications", "Fast-pass and application traffic"),
+    ("promotions", "Promotion and demotion notices"),
+    ("discipline", "Disciplinary actions"),
+    ("loa", "Leave of absence requests"),
+    ("quota", "Quota reminders and reports"),
+    ("notifications", "Department notifications"),
+    ("hr_log", "HR action log"),
+    ("command_log", "Command action log"),
+    ("audit_log", "Full audit trail"),
+    ("fastpass", "Fast-pass evaluations"),
+    ("supervision", "Ride-along / supervision"),
+    ("probation", "Probationary period tracking"),
+    ("tickets_log", "Ticket transcripts and closures"),
+    ("ticket_panel", "Public ticket panel"),
+    ("resignations", "Resignation notices"),
 ]
+
+CATEGORY_SPECS = [
+    ("logs", "Log channels"),
+    ("command", "Command channels"),
+    ("tickets", "Ticket channels are opened in this category"),
+]
+
+BIND_KEYS = {
+    "role": [key for key, _ in ROLE_SPECS],
+    "rank": [name for _, name in RANK_BIND],
+    "channel": [key for key, _ in CHANNEL_SPECS],
+    "category": [key for key, _ in CATEGORY_SPECS],
+}
 
 
 class Setup(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="setupserver", description="Create WSP roles, categories, and channels without deleting existing data.")
-    @is_owner()
-    async def setupserver(self, interaction: discord.Interaction) -> None:
+    setup_group = app_commands.Group(
+        name="setup",
+        description="Bind existing Discord roles and channels by ID. Does not create them.",
+    )
+
+    @setup_group.command(name="menu", description="See which role and channel IDs still need to be bound.")
+    @has_level(PermissionLevel.COMMAND)
+    async def menu(self, interaction: discord.Interaction) -> None:
+        await _send_setup_menu(self.bot, interaction)
+
+    @setup_group.command(name="roles", description="Bind existing department roles. Does not create roles.")
+    @has_level(PermissionLevel.SUPERINTENDENT)
+    async def roles(
+        self,
+        interaction: discord.Interaction,
+        wsp: discord.Role | None = None,
+        hr: discord.Role | None = None,
+        command: discord.Role | None = None,
+        supervisor: discord.Role | None = None,
+        superintendent: discord.Role | None = None,
+    ) -> None:
+        chosen = {
+            "wsp": wsp,
+            "hr": hr,
+            "command": command,
+            "supervisor": supervisor,
+            "superintendent": superintendent,
+        }
+        await _bind_roles(self.bot, interaction, chosen)
+
+    @setup_group.command(name="ranks", description="Bind existing rank roles. Does not create roles.")
+    @has_level(PermissionLevel.SUPERINTENDENT)
+    async def ranks(
+        self,
+        interaction: discord.Interaction,
+        probationary_trooper: discord.Role | None = None,
+        trooper: discord.Role | None = None,
+        senior_trooper: discord.Role | None = None,
+        master_trooper: discord.Role | None = None,
+        corporal: discord.Role | None = None,
+        sergeant: discord.Role | None = None,
+        lieutenant: discord.Role | None = None,
+        captain: discord.Role | None = None,
+        major: discord.Role | None = None,
+        lieutenant_colonel: discord.Role | None = None,
+        colonel: discord.Role | None = None,
+        superintendent_rank: discord.Role | None = None,
+    ) -> None:
+        chosen = {
+            "Probationary Trooper": probationary_trooper,
+            "Trooper": trooper,
+            "Senior Trooper": senior_trooper,
+            "Master Trooper": master_trooper,
+            "Corporal": corporal,
+            "Sergeant": sergeant,
+            "Lieutenant": lieutenant,
+            "Captain": captain,
+            "Major": major,
+            "Lieutenant Colonel": lieutenant_colonel,
+            "Colonel": colonel,
+            "Superintendent": superintendent_rank,
+        }
+        await _bind_rank_roles(self.bot, interaction, chosen)
+
+    @setup_group.command(name="channels", description="Bind existing text channels. Does not create channels.")
+    @has_level(PermissionLevel.SUPERINTENDENT)
+    async def channels(
+        self,
+        interaction: discord.Interaction,
+        applications: discord.TextChannel | None = None,
+        promotions: discord.TextChannel | None = None,
+        discipline: discord.TextChannel | None = None,
+        loa: discord.TextChannel | None = None,
+        quota: discord.TextChannel | None = None,
+        notifications: discord.TextChannel | None = None,
+        hr_log: discord.TextChannel | None = None,
+        command_log: discord.TextChannel | None = None,
+        audit_log: discord.TextChannel | None = None,
+        fastpass: discord.TextChannel | None = None,
+        supervision: discord.TextChannel | None = None,
+        probation: discord.TextChannel | None = None,
+        tickets_log: discord.TextChannel | None = None,
+        ticket_panel: discord.TextChannel | None = None,
+        resignations: discord.TextChannel | None = None,
+    ) -> None:
+        chosen = {
+            "applications": applications,
+            "promotions": promotions,
+            "discipline": discipline,
+            "loa": loa,
+            "quota": quota,
+            "notifications": notifications,
+            "hr_log": hr_log,
+            "command_log": command_log,
+            "audit_log": audit_log,
+            "fastpass": fastpass,
+            "supervision": supervision,
+            "probation": probation,
+            "tickets_log": tickets_log,
+            "ticket_panel": ticket_panel,
+            "resignations": resignations,
+        }
+        await _bind_channels(self.bot, interaction, chosen)
+
+    @setup_group.command(name="categories", description="Bind existing categories. Does not create categories.")
+    @has_level(PermissionLevel.SUPERINTENDENT)
+    async def categories(
+        self,
+        interaction: discord.Interaction,
+        logs: discord.CategoryChannel | None = None,
+        command: discord.CategoryChannel | None = None,
+        tickets: discord.CategoryChannel | None = None,
+    ) -> None:
+        chosen = {"logs": logs, "command": command, "tickets": tickets}
+        await _bind_categories(self.bot, interaction, chosen)
+
+    @setup_group.command(name="bind", description="Paste a Discord ID for one role, rank, channel, or category.")
+    @has_level(PermissionLevel.SUPERINTENDENT)
+    @app_commands.describe(kind="What this ID is for", key="Config key (use autocomplete)", snowflake="Discord ID, mention, or copied snowflake")
+    @app_commands.choices(
+        kind=[
+            app_commands.Choice(name="Department role", value="role"),
+            app_commands.Choice(name="Rank role", value="rank"),
+            app_commands.Choice(name="Channel", value="channel"),
+            app_commands.Choice(name="Category", value="category"),
+        ]
+    )
+    async def bind(self, interaction: discord.Interaction, kind: app_commands.Choice[str], key: str, snowflake: str) -> None:
+        await _bind_snowflake(self.bot, interaction, kind.value, key, snowflake)
+
+    @bind.autocomplete("key")
+    async def bind_key_ac(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        kind_raw = getattr(interaction.namespace, "kind", None) if interaction.namespace else None
+        if isinstance(kind_raw, app_commands.Choice):
+            kind = str(kind_raw.value)
+        else:
+            kind = str(kind_raw or "")
+        keys = BIND_KEYS.get(kind, [])
+        needle = current.lower()
+        matches = [k for k in keys if needle in k.lower()] or keys
+        return [app_commands.Choice(name=k, value=k) for k in matches[:25]]
+
+    @setup_group.command(name="panel", description="Post the ticket panel in the bound ticket-panel channel.")
+    @has_level(PermissionLevel.SUPERINTENDENT)
+    async def panel(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
         if guild is None:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
-        await interaction.response.defer(ephemeral=True)
         cfg = await self.bot.guild_config(guild.id)
-        cfg.set_path(["guild_id"], str(guild.id))
-
-        created_roles: list[str] = []
-        for key, name, color, _desc in ROLE_SPECS:
-            existing_id = cfg.role_id(key)
-            role = guild.get_role(existing_id) if existing_id else discord.utils.get(guild.roles, name=name)
-            if role is None:
-                role = await guild.create_role(name=name, colour=discord.Colour(color), mentionable=True, reason="WSP setup")
-                created_roles.append(name)
-            cfg.set_path(["roles", key], str(role.id))
-
-        for name, _pos, _lv in DEFAULT_RANKS:
-            existing_id = cfg.rank_role_id(name)
-            role = guild.get_role(existing_id) if existing_id else discord.utils.get(guild.roles, name=f"WSP | {name}")
-            if role is None:
-                role = await guild.create_role(
-                    name=f"WSP | {name}",
-                    colour=discord.Colour(RANK_COLORS.get(name, 0x3D5A80)),
-                    mentionable=False,
-                    reason="WSP rank setup",
-                )
-                created_roles.append(role.name)
-            cfg.set_path(["rank_roles", name], str(role.id))
-            await self.bot.db.set_rank_role(guild.id, name, role.id)
-
-        async def ensure_category(key: str, name: str) -> discord.CategoryChannel:
-            existing_id = cfg.category_id(key)
-            ch = guild.get_channel(existing_id) if existing_id else discord.utils.get(guild.categories, name=name)
-            if not isinstance(ch, discord.CategoryChannel):
-                ch = await guild.create_category(name, reason="WSP setup")
-            cfg.set_path(["categories", key], str(ch.id))
-            return ch
-
-        logs_cat = await ensure_category("logs", "WSP Logs")
-        command_cat = await ensure_category("command", "WSP Command")
-        tickets_cat = await ensure_category("tickets", "WSP Tickets")
-
-        hr_role = guild.get_role(cfg.role_id("hr"))
-        command_role = guild.get_role(cfg.role_id("command"))
-        super_role = guild.get_role(cfg.role_id("superintendent"))
-        wsp_role = guild.get_role(cfg.role_id("wsp"))
-
-        staff_overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        }
-        for role in (hr_role, command_role, super_role):
-            if role:
-                staff_overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-
-        created_channels: list[str] = []
-        for key, name, topic in CHANNEL_SPECS:
-            existing_id = cfg.channel_id(key)
-            channel = guild.get_channel(existing_id) if existing_id else discord.utils.get(guild.text_channels, name=name)
-            category = tickets_cat if key == "ticket_panel" else (command_cat if key in {"promotions", "discipline", "notifications"} else logs_cat)
-            overwrites = None if key in {"ticket_panel", "notifications"} else staff_overwrites
-            if key in {"ticket_panel", "notifications"} and wsp_role:
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    wsp_role: discord.PermissionOverwrite(view_channel=True, send_messages=False, read_message_history=True),
-                }
-                for role in (hr_role, command_role, super_role):
-                    if role:
-                        overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-            if not isinstance(channel, discord.TextChannel):
-                channel = await guild.create_text_channel(name, category=category, topic=topic, overwrites=overwrites, reason="WSP setup")
-                created_channels.append(name)
-            cfg.set_path(["channels", key], str(channel.id))
-
-        await self.bot.db.ensure_ranks(guild.id, cfg)
-        await self.bot.save_config(guild.id, cfg)
-
-        panel = guild.get_channel(cfg.channel_id("ticket_panel"))
-        if isinstance(panel, discord.TextChannel):
-            from wsp.views.tickets import TicketPanelView
-
-            embed = base_embed(
-                "Wisconsin State Patrol  •  Assistance Desk",
-                "Select a request type below. A private ticket channel will be created for you and HR/Command.",
-                color=COLOR_GOLD,
+        channel = guild.get_channel(cfg.channel_id("ticket_panel"))
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message(
+                embed=error_embed("Ticket panel channel not bound", "Bind it first with `/setup channels` or `/setup bind`."),
+                ephemeral=True,
             )
-            await panel.send(embed=embed, view=TicketPanelView())
+            return
+        from wsp.views.tickets import TicketPanelView
 
-        embed = success_embed(
-            "Server setup complete",
-            "Roles and channels were created or reused. Existing Discord data was not deleted.",
+        embed = base_embed(
+            "Wisconsin State Patrol  •  Assistance Desk",
+            "Select a request type below. A private ticket channel will be created for you and HR/Command.",
+            color=COLOR_GOLD,
         )
-        add_fields(
-            embed,
-            [
-                ("Roles created", ", ".join(created_roles) or "None (reused existing)", False),
-                ("Channels created", ", ".join(created_channels) or "None (reused existing)", False),
-                ("Guild ID", str(guild.id), True),
-            ],
+        await channel.send(embed=embed, view=TicketPanelView())
+        await interaction.response.send_message(
+            embed=success_embed("Ticket panel posted", f"Posted in {channel.mention}."),
+            ephemeral=True,
         )
-        await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="verifysetup", description="Check that required roles, channels, and database tables exist.")
+    @app_commands.command(name="setupserver", description="Open setup. Bind existing IDs — nothing is created.")
+    @is_owner()
+    async def setupserver(self, interaction: discord.Interaction) -> None:
+        await _send_setup_menu(self.bot, interaction)
+
+    @app_commands.command(name="verifysetup", description="Check that required role and channel IDs are bound and exist.")
     @has_level(PermissionLevel.COMMAND)
     async def verifysetup(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
@@ -176,43 +259,41 @@ class Setup(commands.Cog):
         cfg = await self.bot.guild_config(guild.id)
         missing_cfg = cfg.missing_required()
         missing_discord: list[str] = []
-        for key in ("wsp", "hr", "command", "supervisor", "superintendent"):
+        for key, _label in ROLE_SPECS:
             rid = cfg.role_id(key)
             if rid and guild.get_role(rid) is None:
-                missing_discord.append(f"role {key}")
-        for key, _name, _topic in CHANNEL_SPECS:
+                missing_discord.append(f"role {key} (`{rid}`)")
+        for _param, name in RANK_BIND:
+            rid = cfg.rank_role_id(name)
+            if rid and guild.get_role(rid) is None:
+                missing_discord.append(f"rank {name} (`{rid}`)")
+        for key, _topic in CHANNEL_SPECS:
             cid = cfg.channel_id(key)
             if cid and guild.get_channel(cid) is None:
-                missing_discord.append(f"channel {key}")
+                missing_discord.append(f"channel {key} (`{cid}`)")
+        for key, _label in CATEGORY_SPECS:
+            cid = cfg.category_id(key)
+            if cid and guild.get_channel(cid) is None:
+                missing_discord.append(f"category {key} (`{cid}`)")
         tables = await self.bot.db.fetchall("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         table_names = [r["name"] for r in tables]
         required_tables = ["personnel", "shifts", "audit_log", "tickets", "loa_requests", "discipline"]
         missing_tables = [t for t in required_tables if t not in table_names]
         ok = not missing_cfg and not missing_discord and not missing_tables
-        embed = success_embed("Setup verification", "All required pieces are in place.") if ok else warning_embed(
-            "Setup incomplete", "Review the missing items below, then run `/setupserver` or `/config`."
+        embed = success_embed("Setup verification", "All required IDs are bound and exist.") if ok else warning_embed(
+            "Setup incomplete",
+            "Bind missing IDs with `/setup roles`, `/setup ranks`, `/setup channels`, `/setup categories`, or `/setup bind`.",
         )
         add_fields(
             embed,
             [
-                ("Config gaps", "\n".join(missing_cfg) or "None", False),
-                ("Missing Discord objects", "\n".join(missing_discord) or "None", False),
+                ("Unbound IDs", _clip(missing_cfg), False),
+                ("IDs not found in this server", _clip(missing_discord), False),
                 ("Missing tables", ", ".join(missing_tables) or "None", False),
                 ("Tables present", str(len(table_names)), True),
             ],
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="setup", description="Interactive setup overview and next steps.")
-    @has_level(PermissionLevel.COMMAND)
-    async def setup(self, interaction: discord.Interaction) -> None:
-        embed = base_embed(
-            "WSP department setup",
-            "Use the buttons below. `/setupserver` creates Discord structure. `/config` edits IDs without touching Discord.",
-            color=COLOR_NAVY,
-        )
-        view = SetupNavView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(name="config", description="View or update department configuration keys.")
     @has_level(PermissionLevel.SUPERINTENDENT)
@@ -223,7 +304,7 @@ class Setup(commands.Cog):
             return
         cfg = await self.bot.guild_config(interaction.guild.id)
         if not path:
-            embed = base_embed("Department configuration", "Current high-level IDs. Use `/config path:channels.hr_log value:123` to change.")
+            embed = base_embed("Department configuration", "Current IDs. Use `/setup bind` or `/config path:channels.hr_log value:123`.")
             roles = cfg.get("roles") or {}
             channels = cfg.get("channels") or {}
             embed.add_field(name="Roles", value="\n".join(f"`{k}` → `{v or 'unset'}`" for k, v in roles.items()) or "—", inline=True)
@@ -241,19 +322,26 @@ class Setup(commands.Cog):
             current = cfg.get(*keys, default="(unset)")
             await interaction.response.send_message(embed=base_embed("Config value", f"`{path}` = `{current}`"), ephemeral=True)
             return
-        parsed: str | int = value
-        if value.isdigit():
-            parsed = int(value)
-        cfg.set_path(keys, str(parsed) if keys[0] in {"roles", "channels", "categories", "rank_roles", "guild_id"} else parsed)
+        if keys[0] in {"roles", "channels", "categories", "rank_roles", "guild_id"}:
+            parsed_id = parse_snowflake(value)
+            if not parsed_id:
+                await interaction.response.send_message(embed=error_embed("Invalid ID", "Paste a Discord snowflake ID."), ephemeral=True)
+                return
+            cfg.set_path(keys, str(parsed_id))
+            display = str(parsed_id)
+        else:
+            parsed: str | int = int(value) if value.isdigit() else value
+            cfg.set_path(keys, parsed)
+            display = str(parsed)
         await self.bot.save_config(interaction.guild.id, cfg)
         await self.bot.db.audit(
             interaction.guild.id,
             "config",
             actor_id=interaction.user.id,
             actor_name=str(interaction.user),
-            details=f"{path} = {value}",
+            details=f"{path} = {display}",
         )
-        await interaction.response.send_message(embed=success_embed("Configuration updated", f"`{path}` set to `{value}`."), ephemeral=True)
+        await interaction.response.send_message(embed=success_embed("Configuration updated", f"`{path}` set to `{display}`."), ephemeral=True)
 
     @app_commands.command(name="sync", description="Re-sync slash commands to this guild (owner).")
     @is_owner()
@@ -266,20 +354,265 @@ class Setup(commands.Cog):
             synced = await self.bot.tree.sync()
         await interaction.followup.send(embed=success_embed("Commands synced", f"{len(synced)} commands published."), ephemeral=True)
 
-    @app_commands.command(name="resetserver", description="Clear stored WSP config for this guild. Discord data is kept unless confirmed.")
+    @app_commands.command(name="resetserver", description="Clear stored WSP IDs for this guild. Discord roles and channels are kept.")
     @is_owner()
-    @app_commands.describe(wipe_discord="If true, also delete WSP-managed roles and channels created by name")
+    @app_commands.describe(wipe_discord="If true, also delete the bound Discord channels (not recommended)")
     async def resetserver(self, interaction: discord.Interaction, wipe_discord: bool = False) -> None:
         view = ResetConfirmView(wipe_discord)
         await interaction.response.send_message(
             embed=warning_embed(
                 "Confirm configuration reset",
-                "This removes stored WSP configuration for this guild. Personnel records in the database are kept.\n"
-                + ("Discord roles/channels matching WSP setup names will also be deleted." if wipe_discord else "Discord roles and channels will be left in place."),
+                "This removes stored WSP IDs for this guild. Personnel records in the database are kept.\n"
+                + (
+                    "Bound Discord channels will also be deleted."
+                    if wipe_discord
+                    else "Your existing Discord roles and channels will be left in place."
+                ),
             ),
             view=view,
             ephemeral=True,
         )
+
+
+async def _send_setup_menu(bot: WSPBot, interaction: discord.Interaction) -> None:
+    guild = interaction.guild
+    if guild is None:
+        await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+        return
+    cfg = await bot.guild_config(guild.id)
+    missing = cfg.missing_required()
+    embed = base_embed(
+        "WSP department setup",
+        "This bot does **not** create roles, channels, or categories. "
+        "Pick existing ones, or paste IDs with `/setup bind`.\n\n"
+        "`/setup roles`  `/setup ranks`  `/setup channels`  `/setup categories`  `/setup bind`  `/setup panel`",
+        color=COLOR_NAVY,
+    )
+    embed.add_field(name="Department roles", value=_role_status(guild, cfg), inline=False)
+    embed.add_field(name="Rank roles", value=_rank_status(cfg), inline=False)
+    embed.add_field(name="Channels", value=_channel_status(guild, cfg), inline=False)
+    embed.add_field(name="Categories", value=_category_status(guild, cfg), inline=False)
+    embed.add_field(name="Still unbound", value=_clip(missing), inline=False)
+    await interaction.response.send_message(embed=embed, view=SetupNavView(), ephemeral=True)
+
+
+async def _bind_roles(bot: WSPBot, interaction: discord.Interaction, chosen: dict[str, discord.Role | None]) -> None:
+    updates = {key: role for key, role in chosen.items() if role is not None}
+    if not updates:
+        await _send_setup_menu(bot, interaction)
+        return
+    cfg = await _prepare_cfg(bot, interaction)
+    if cfg is None:
+        return
+    lines = []
+    for key, role in updates.items():
+        cfg.set_path(["roles", key], str(role.id))
+        lines.append(f"`roles.{key}` → {role.mention} `{role.id}`")
+    await _finish_bind(bot, interaction, cfg, lines)
+
+
+async def _bind_rank_roles(bot: WSPBot, interaction: discord.Interaction, chosen: dict[str, discord.Role | None]) -> None:
+    updates = {name: role for name, role in chosen.items() if role is not None}
+    if not updates:
+        await _send_setup_menu(bot, interaction)
+        return
+    cfg = await _prepare_cfg(bot, interaction)
+    if cfg is None:
+        return
+    guild = interaction.guild
+    assert guild is not None
+    lines = []
+    for name, role in updates.items():
+        cfg.set_path(["rank_roles", name], str(role.id))
+        await bot.db.set_rank_role(guild.id, name, role.id)
+        lines.append(f"`rank_roles.{name}` → {role.mention} `{role.id}`")
+    await _finish_bind(bot, interaction, cfg, lines)
+
+
+async def _bind_channels(bot: WSPBot, interaction: discord.Interaction, chosen: dict[str, discord.TextChannel | None]) -> None:
+    updates = {key: channel for key, channel in chosen.items() if channel is not None}
+    if not updates:
+        await _send_setup_menu(bot, interaction)
+        return
+    cfg = await _prepare_cfg(bot, interaction)
+    if cfg is None:
+        return
+    lines = []
+    for key, channel in updates.items():
+        cfg.set_path(["channels", key], str(channel.id))
+        lines.append(f"`channels.{key}` → {channel.mention} `{channel.id}`")
+    await _finish_bind(bot, interaction, cfg, lines)
+
+
+async def _bind_categories(bot: WSPBot, interaction: discord.Interaction, chosen: dict[str, discord.CategoryChannel | None]) -> None:
+    updates = {key: category for key, category in chosen.items() if category is not None}
+    if not updates:
+        await _send_setup_menu(bot, interaction)
+        return
+    cfg = await _prepare_cfg(bot, interaction)
+    if cfg is None:
+        return
+    lines = []
+    for key, category in updates.items():
+        cfg.set_path(["categories", key], str(category.id))
+        lines.append(f"`categories.{key}` → {category.mention} `{category.id}`")
+    await _finish_bind(bot, interaction, cfg, lines)
+
+
+async def _bind_snowflake(bot: WSPBot, interaction: discord.Interaction, kind: str, key: str, raw: str) -> None:
+    guild = interaction.guild
+    if guild is None:
+        await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+        return
+    allowed = BIND_KEYS.get(kind, [])
+    if key not in allowed:
+        await interaction.response.send_message(
+            embed=error_embed("Unknown key", f"`{key}` is not a {kind} key. Use autocomplete."),
+            ephemeral=True,
+        )
+        return
+    snowflake = parse_snowflake(raw)
+    if not snowflake:
+        await interaction.response.send_message(embed=error_embed("Invalid ID", "Paste a Discord snowflake ID."), ephemeral=True)
+        return
+    if kind == "role":
+        obj = guild.get_role(snowflake)
+        if obj is None:
+            await interaction.response.send_message(embed=error_embed("Role not found", f"No role `{snowflake}` in this server."), ephemeral=True)
+            return
+        await _bind_roles(bot, interaction, {key: obj})
+        return
+    if kind == "rank":
+        obj = guild.get_role(snowflake)
+        if obj is None:
+            await interaction.response.send_message(embed=error_embed("Role not found", f"No role `{snowflake}` in this server."), ephemeral=True)
+            return
+        await _bind_rank_roles(bot, interaction, {key: obj})
+        return
+    obj = guild.get_channel(snowflake)
+    if obj is None:
+        try:
+            obj = await guild.fetch_channel(snowflake)
+        except discord.HTTPException:
+            obj = None
+    if kind == "channel":
+        if not isinstance(obj, discord.TextChannel):
+            await interaction.response.send_message(embed=error_embed("Channel not found", f"No text channel `{snowflake}` in this server."), ephemeral=True)
+            return
+        await _bind_channels(bot, interaction, {key: obj})
+        return
+    if not isinstance(obj, discord.CategoryChannel):
+        await interaction.response.send_message(embed=error_embed("Category not found", f"No category `{snowflake}` in this server."), ephemeral=True)
+        return
+    await _bind_categories(bot, interaction, {key: obj})
+
+
+async def _prepare_cfg(bot: WSPBot, interaction: discord.Interaction):
+    guild = interaction.guild
+    if guild is None:
+        await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+        return None
+    cfg = await bot.guild_config(guild.id)
+    cfg.set_path(["guild_id"], str(guild.id))
+    return cfg
+
+
+async def _finish_bind(bot: WSPBot, interaction: discord.Interaction, cfg, lines: list[str]) -> None:
+    guild = interaction.guild
+    assert guild is not None
+    await bot.db.ensure_ranks(guild.id, cfg)
+    await bot.save_config(guild.id, cfg)
+    await bot.db.audit(
+        guild.id,
+        "setup_bind",
+        actor_id=interaction.user.id,
+        actor_name=str(interaction.user),
+        details="; ".join(lines)[:1500],
+    )
+    remaining = cfg.missing_required()
+    embed = success_embed("IDs bound", "\n".join(lines))
+    if remaining:
+        embed.add_field(name="Still unbound", value=_clip(remaining), inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+def parse_snowflake(raw: str) -> int:
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if not digits:
+        return 0
+    try:
+        return int(digits)
+    except ValueError:
+        return 0
+
+
+def _clip(items: list[str]) -> str:
+    if not items:
+        return "None"
+    text = "\n".join(f"`{item}`" if not item.startswith("`") else item for item in items)
+    if len(text) <= 1024:
+        return text
+    kept: list[str] = []
+    used = 0
+    for item in items:
+        line = f"`{item}`"
+        if used + len(line) + 1 > 980:
+            kept.append(f"… +{len(items) - len(kept)} more")
+            break
+        kept.append(line)
+        used += len(line) + 1
+    return "\n".join(kept)
+
+
+def _rank_status(cfg) -> str:
+    bound = 0
+    missing: list[str] = []
+    for _param, name in RANK_BIND:
+        if cfg.rank_role_id(name):
+            bound += 1
+        else:
+            missing.append(name)
+    if not missing:
+        return f"{bound}/12 bound"
+    return f"{bound}/12 bound\nUnset: " + ", ".join(missing)
+
+
+def _role_status(guild: discord.Guild, cfg) -> str:
+    lines = []
+    for key, _label in ROLE_SPECS:
+        rid = cfg.role_id(key)
+        role = guild.get_role(rid) if rid else None
+        lines.append(f"`{key}` → {role.mention if role else ('`' + str(rid) + '` (missing)' if rid else 'unset')}")
+    return "\n".join(lines)
+
+
+def _channel_status(guild: discord.Guild, cfg) -> str:
+    lines = []
+    for key, _topic in CHANNEL_SPECS:
+        cid = cfg.channel_id(key)
+        channel = guild.get_channel(cid) if cid else None
+        if isinstance(channel, discord.TextChannel):
+            lines.append(f"`{key}` → {channel.mention}")
+        elif cid:
+            lines.append(f"`{key}` → `{cid}` (missing)")
+        else:
+            lines.append(f"`{key}` → unset")
+    text = "\n".join(lines)
+    return text[:1024]
+
+
+def _category_status(guild: discord.Guild, cfg) -> str:
+    lines = []
+    for key, _label in CATEGORY_SPECS:
+        cid = cfg.category_id(key)
+        channel = guild.get_channel(cid) if cid else None
+        if isinstance(channel, discord.CategoryChannel):
+            lines.append(f"`{key}` → {channel.mention}")
+        elif cid:
+            lines.append(f"`{key}` → `{cid}` (missing)")
+        else:
+            lines.append(f"`{key}` → unset")
+    return "\n".join(lines)
 
 
 class SetupNavView(discord.ui.View):
@@ -343,7 +676,7 @@ class ResetConfirmView(discord.ui.View):
         bot.invalidate_config(guild.id)
         await bot.db.audit(guild.id, "resetserver", actor_id=interaction.user.id, actor_name=str(interaction.user), details=f"wipe_discord={self.wipe_discord}")
         await interaction.response.edit_message(
-            embed=success_embed("Configuration reset", "Stored settings cleared." + (f" Deleted: {', '.join(deleted) or 'none'}." if self.wipe_discord else "")),
+            embed=success_embed("Configuration reset", "Stored IDs cleared." + (f" Deleted: {', '.join(deleted) or 'none'}." if self.wipe_discord else "")),
             view=None,
         )
 

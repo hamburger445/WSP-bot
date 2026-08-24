@@ -68,7 +68,7 @@ class TicketOpenModal(discord.ui.Modal):
         category = guild.get_channel(category_id) if category_id else None
         if not isinstance(category, discord.CategoryChannel):
             await interaction.response.send_message(
-                embed=error_embed("Tickets not configured", "A ticket category has not been set. Ask an owner to run `/setupserver`."),
+                embed=error_embed("Tickets not configured", "A ticket category has not been bound. Ask an owner to run `/setup categories`."),
                 ephemeral=True,
             )
             return

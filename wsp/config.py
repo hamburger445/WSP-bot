@@ -169,12 +169,10 @@ class GuildConfig:
         missing: list[str] = []
         if not self.guild_id():
             missing.append("guild_id")
-        for key in ("wsp", "hr", "command", "supervisor", "superintendent"):
-            if not self.role_id(key):
-                missing.append(f"roles.{key}")
-        for key in ("audit_log", "notifications", "hr_log"):
-            if not self.channel_id(key):
-                missing.append(f"channels.{key}")
+        for section in ("roles", "rank_roles", "channels", "categories"):
+            for key, value in (self.get(section) or {}).items():
+                if not _as_snowflake(value):
+                    missing.append(f"{section}.{key}")
         return missing
 
 
