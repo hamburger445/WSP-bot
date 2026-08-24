@@ -19,14 +19,18 @@
     <p class="lede">Command Center. Restricted to department personnel. Sign in with Discord to continue.</p>
     {% if error == 'guild' %}
       <p class="banner">You are not a member of the configured WSP guild.</p>
+    {% elif error == 'redirect' %}
+      <p class="banner">Discord rejected the redirect URL. Add the exact URI below under OAuth2 → Redirects, then try again.</p>
     {% elif error %}
       <p class="banner">Sign-in failed. Check OAuth client ID, secret, and redirect URL.</p>
     {% endif %}
     {% if oauth_ready %}
       <a class="gold-btn" href="/auth/discord">Continue with Discord</a>
     {% else %}
-      <p class="banner">Set <code>DISCORD_CLIENT_ID</code> and <code>DISCORD_CLIENT_SECRET</code> in <code>.env</code>, and add the redirect <code>{{ request.base_url }}auth/callback</code> in the Discord Developer Portal.</p>
+      <p class="banner">Set <code>DISCORD_CLIENT_ID</code> and <code>DISCORD_CLIENT_SECRET</code> in the host environment.</p>
     {% endif %}
+    <p class="lede" style="margin-top:22px">Add this <strong>exact</strong> redirect in Discord Developer Portal → OAuth2 → Redirects:</p>
+    <p class="mono" style="word-break:break-all;color:#e4d09a">{{ oauth_redirect }}</p>
     <p class="fine">Duty logs, personnel files, and disciplinary records are audited.</p>
   </div>
 </body>

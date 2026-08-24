@@ -38,6 +38,8 @@ async def run() -> None:
         port=settings.port,
         log_level=settings.log_level.lower(),
         lifespan="off",
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
     server = uvicorn.Server(config)
 

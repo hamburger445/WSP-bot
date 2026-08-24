@@ -25,6 +25,11 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
+def _is_local_url(value: str) -> bool:
+    lower = value.lower()
+    return "127.0.0.1" in lower or "localhost" in lower or "0.0.0.0" in lower
+
+
 def env_int(name: str, default: int) -> int:
     raw = _env(name)
     if not raw:
@@ -55,9 +60,12 @@ class Settings:
         self.owner_ids = parse_owner_ids()
         guild = _env("GUILD_ID")
         self.guild_id = int(guild) if guild.isdigit() else 0
-        self.dashboard_base_url = (
-            _env("DASHBOARD_BASE_URL") or _env("RENDER_EXTERNAL_URL") or "http://127.0.0.1:8080"
-        ).rstrip("/")
+        configured = _env("DASHBOARD_BASE_URL")
+        render_url = _env("RENDER_EXTERNAL_URL")
+        # A leftover local URL in env would break Discord OAuth on Render.
+        if render_url and (not configured or _is_local_url(configured)):
+            configured = render_url
+        self.dashboard_base_url = (configured or "http://127.0.0.1:8080").rstrip("/")
         self.dashboard_secret = _env("DASHBOARD_SECRET_KEY", "change-me")
         self.host = _env("HOST", "0.0.0.0")
         self.port = env_int("PORT", 8080)

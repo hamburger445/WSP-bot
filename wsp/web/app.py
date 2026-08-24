@@ -62,8 +62,20 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
     def current_user(request: Request) -> dict[str, Any] | None:
         return auth.session_user(request)
 
-    def redirect_uri() -> str:
-        return f"{settings.dashboard_base_url}/auth/callback"
+    def public_origin(request: Request) -> str:
+        proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "http").split(",")[0].strip()
+        host = (
+            request.headers.get("x-forwarded-host")
+            or request.headers.get("host")
+            or request.url.netloc
+        )
+        host = (host or "").split(",")[0].strip()
+        if host:
+            return f"{proto}://{host}".rstrip("/")
+        return settings.dashboard_base_url.rstrip("/")
+
+    def redirect_uri(request: Request) -> str:
+        return f"{public_origin(request)}/auth/callback"
 
     def ctx(request: Request, **extra: Any) -> dict[str, Any]:
         user = current_user(request)
@@ -109,15 +121,26 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
         if current_user(request):
             return RedirectResponse("/", status_code=302)
         ready = bool(settings.discord_client_id and settings.discord_client_secret)
-        return render("login.html", ctx(request, oauth_ready=ready, error=request.query_params.get("error")))
+        return render(
+            "login.html",
+            ctx(
+                request,
+                oauth_ready=ready,
+                error=request.query_params.get("error"),
+                oauth_redirect=redirect_uri(request),
+            ),
+        )
 
     @app.get("/auth/discord")
     async def auth_discord(request: Request) -> Any:
         if not settings.discord_client_id or not settings.discord_client_secret:
             return RedirectResponse("/login?error=oauth", status_code=302)
         state = secrets.token_urlsafe(16)
+        callback = redirect_uri(request)
         request.session["oauth_state"] = state
-        return RedirectResponse(auth.login_url(settings.discord_client_id, redirect_uri(), state), status_code=302)
+        request.session["oauth_redirect"] = callback
+        log.info("Discord OAuth redirect_uri=%s", callback)
+        return RedirectResponse(auth.login_url(settings.discord_client_id, callback, state), status_code=302)
 
     @app.get("/auth/callback")
     async def auth_callback(request: Request, code: str | None = None, state: str | None = None) -> Any:
@@ -125,7 +148,10 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return RedirectResponse("/login?error=state", status_code=302)
         try:
             token = await auth.exchange_code(
-                settings.discord_client_id, settings.discord_client_secret, redirect_uri(), code
+                settings.discord_client_id,
+                settings.discord_client_secret,
+                request.session.get("oauth_redirect") or redirect_uri(request),
+                code,
             )
             profile = await auth.fetch_user(token["access_token"])
         except Exception:
