@@ -69,7 +69,7 @@ Copy `.env.example` to `.env` and fill in values. **Never commit `.env`.**
 | `TIMEZONE` | Default `America/Chicago` |
 | `LOG_LEVEL` | `INFO` or `DEBUG` |
 
-Department role/channel IDs are **not** hardcoded. Bind the roles and channels you already have with `/setup` (or paste snowflakes with `/setup bind` / `/config`). The bot does not create Discord roles or channels during setup.
+Department role/channel IDs are **not** hardcoded. Run `/setupserver` and paste each existing role, channel, and category ID when asked. The bot does not create Discord roles or channels during setup.
 
 ---
 
@@ -106,15 +106,9 @@ To move to PostgreSQL later, keep the same table names/columns and swap the engi
 ## Configuration
 
 1. Start the service (see below).
-2. In Discord, run **`/setup menu`** (or **`/setupserver`**) as an owner listed in `OWNER_IDS`.
-   Bind your existing roles and channels — the bot will not create new ones:
-   * `/setup roles` — department roles (WSP, HR, Command, Supervisor, Superintendent)
-   * `/setup ranks` — one Discord role per rank
-   * `/setup channels` — log and notification channels
-   * `/setup categories` — logs, command, and tickets categories
-   * `/setup bind` — paste a snowflake ID for a single key
-   * `/setup panel` — post the ticket panel in the bound ticket-panel channel
-3. Run **`/verifysetup`** to confirm every ID is bound and exists in the server.
+2. In Discord, run **`/setupserver`** as an owner listed in `OWNER_IDS`.
+   The bot asks one question at a time (for example: “Where do you want audit logs to go?”). Paste the Discord ID, then it saves and moves to the next.
+3. Run **`/verifysetup`** to confirm every ID is set and exists in the server.
 4. Tune values with **`/config`** (example: `/config path:quota.weekly_minutes value:180`).
 
 Operational defaults live in `config/default.json` (ranks, quota minutes, probation length, fleet names, training modules). Per-guild overlays are stored in the database.
@@ -207,7 +201,7 @@ SQLite files in `data/` are left in place across updates.
 
 | Area | Commands / UI |
 |---|---|
-| Setup | `/setup menu` `roles` `ranks` `channels` `categories` `bind` `panel` `/setupserver` `/config` `/resetserver` `/verifysetup` `/sync` |
+| Setup | `/setupserver` `/verifysetup` `/config` `/resetserver` `/sync` |
 | Personnel | `/personnel add` `note` `transfer` `suspend` `remove` `reinstate` `history` |
 | Profile | `/profile` with section dropdown |
 | Training | `/training set` `/training view` |
@@ -241,7 +235,7 @@ Raise the bot role above WSP rank roles. Grant Manage Roles.
 Check `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DASHBOARD_BASE_URL`, and the OAuth redirect. `error=guild` means the account is not in the WSP server.
 
 **Bot online, dashboard empty**  
-`GUILD_ID` must match the server. Bind roles/channels with `/setup`, then `/personnel add`.
+`GUILD_ID` must match the server. Run `/setupserver`, then `/personnel add`.
 
 **Privileged intents error**  
 Enable Server Members and Message Content in the Developer Portal.
