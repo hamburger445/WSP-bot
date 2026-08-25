@@ -180,6 +180,22 @@ class GuildConfig:
     def category_id(self, key: str) -> int:
         return _as_snowflake(self.get("categories", key))
 
+    def fire_role_ids(self) -> list[int]:
+        ids: list[int] = []
+        for value in self.get("fire_roles") or []:
+            sid = _as_snowflake(value)
+            if sid:
+                ids.append(sid)
+        return ids
+
+    def retired_rank_role_ids(self) -> list[int]:
+        ids: list[int] = []
+        for value in self.get("retired_rank_roles") or []:
+            sid = _as_snowflake(value)
+            if sid:
+                ids.append(sid)
+        return ids
+
     def all_managed_role_ids(self) -> set[int]:
         ids: set[int] = set()
         for value in (self.get("roles") or {}).values():
@@ -190,7 +206,43 @@ class GuildConfig:
             sid = _as_snowflake(value)
             if sid:
                 ids.add(sid)
+        ids.update(self.fire_role_ids())
+        ids.update(self.retired_rank_role_ids())
         return ids
+
+    def apply_published_structure(self) -> bool:
+        """Keep rank ladder, band/duty roles, and fire extras in lockstep with default.json."""
+        defaults = load_default_config()
+        changed = False
+        new_rank_roles = defaults.get("rank_roles") or {}
+        retired = [str(v) for v in (self._data.get("retired_rank_roles") or [])]
+        for name, raw in (self._data.get("rank_roles") or {}).items():
+            if name in new_rank_roles:
+                continue
+            sid = _as_snowflake(raw)
+            if sid and str(sid) not in retired:
+                retired.append(str(sid))
+        if retired != [str(v) for v in (self._data.get("retired_rank_roles") or [])]:
+            self._data["retired_rank_roles"] = retired
+            changed = True
+        if self._data.get("ranks") != defaults.get("ranks"):
+            self._data["ranks"] = deepcopy(defaults.get("ranks") or [])
+            changed = True
+        if self._data.get("rank_roles") != new_rank_roles:
+            self._data["rank_roles"] = deepcopy(new_rank_roles)
+            changed = True
+        wanted_fire = [str(v) for v in (defaults.get("fire_roles") or [])]
+        current_fire = [str(v) for v in (self._data.get("fire_roles") or [])]
+        if current_fire != wanted_fire:
+            self._data["fire_roles"] = list(defaults.get("fire_roles") or [])
+            changed = True
+        for key in ("on_duty", "high_rank", "middle_rank", "low_rank"):
+            wanted = str((defaults.get("roles") or {}).get(key) or "")
+            current = str((self._data.get("roles") or {}).get(key) or "")
+            if current != wanted:
+                self.set_path(["roles", key], wanted)
+                changed = True
+        return changed
 
     def missing_required(self) -> list[str]:
         missing: list[str] = []

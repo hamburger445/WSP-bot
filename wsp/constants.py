@@ -22,15 +22,28 @@ DEFAULT_RANKS = [
     ("Trooper", 2, 1),
     ("Senior Trooper", 3, 1),
     ("Master Trooper", 4, 1),
-    ("Corporal", 5, 2),
-    ("Sergeant", 6, 2),
-    ("Lieutenant", 7, 3),
-    ("Captain", 8, 4),
-    ("Major", 9, 4),
-    ("Lieutenant Colonel", 10, 4),
-    ("Colonel", 11, 4),
-    ("Superintendent", 12, 5),
+    ("Sergeant", 5, 2),
+    ("Lieutenant", 6, 3),
+    ("Captain", 7, 4),
+    ("Major", 8, 4),
+    ("Colonel", 9, 4),
+    ("Superintendent", 10, 5),
 ]
+
+HIGH_RANKS = frozenset({"Lieutenant", "Captain", "Major", "Colonel", "Superintendent"})
+MIDDLE_RANKS = frozenset({"Sergeant"})
+LOW_RANKS = frozenset({"Master Trooper", "Senior Trooper", "Trooper", "Probationary Trooper"})
+BAND_ROLE_KEYS = {"high": "high_rank", "middle": "middle_rank", "low": "low_rank"}
+
+
+def rank_band(name: str | None) -> str | None:
+    if name in HIGH_RANKS:
+        return "high"
+    if name in MIDDLE_RANKS:
+        return "middle"
+    if name in LOW_RANKS:
+        return "low"
+    return None
 
 
 class PermissionLevel(IntEnum):

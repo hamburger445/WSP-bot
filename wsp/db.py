@@ -408,6 +408,31 @@ class Database:
                     int(rank.get("permission_level", 1)),
                 ),
             )
+        names = [rank["name"] for rank in ranks]
+        if names:
+            placeholders = ",".join("?" * len(names))
+            existing = await self.fetchall(
+                "SELECT id, name FROM ranks WHERE guild_id = ?",
+                (str(guild_id),),
+            )
+            drop_ids = [int(row["id"]) for row in existing if row["name"] not in names]
+            if drop_ids:
+                fallback = await self.get_rank_by_name(guild_id, "Trooper")
+                for dropped in drop_ids:
+                    if fallback:
+                        await self.execute(
+                            "UPDATE personnel SET rank_id = ? WHERE guild_id = ? AND rank_id = ?",
+                            (int(fallback["id"]), str(guild_id), dropped),
+                        )
+                    else:
+                        await self.execute(
+                            "UPDATE personnel SET rank_id = NULL WHERE guild_id = ? AND rank_id = ?",
+                            (str(guild_id), dropped),
+                        )
+                await self.execute(
+                    f"DELETE FROM ranks WHERE guild_id = ? AND name NOT IN ({placeholders})",
+                    (str(guild_id), *names),
+                )
 
     async def list_ranks(self, guild_id: int) -> list[aiosqlite.Row]:
         return await self.fetchall(

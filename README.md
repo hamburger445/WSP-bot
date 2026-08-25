@@ -16,12 +16,19 @@ Start: copy `.env.example` to `.env`, then `python main.py`. Hosted at the Rende
 `/profile`
 
 **Rank**  
-`/promote` `/demote` `/fire` — fire strips WSP membership, staff, and rank roles
+`/promote` `/demote` `/fire`  
+Promote and demote keep the matching rank role plus the High / Middle / Low band role. `/fire` also strips the on-duty role and the extra WSP roles listed in config.
+
+**Ranks**  
+High: Superintendent, Colonel, Major, Captain, Lieutenant  
+Middle: Sergeant  
+Low: Master Trooper, Senior Trooper, Trooper, Probationary Trooper
 
 **Shifts**  
 `/shift menu` — public start / pause / resume / end buttons  
 `/shift data` — public duty board and leaderboard  
-`/shift start` `status` `leaderboard` `history` `correct`
+`/shift start` `status` `leaderboard` `history` `correct`  
+Starting a shift grants the on-duty role. Pause, end, fire, and shift reset remove it.
 
 **Quota**  
 `/quota view` `leaderboard` `admin`  

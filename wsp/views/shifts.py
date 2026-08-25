@@ -9,7 +9,7 @@ import discord
 from wsp.constants import COLOR_NAVY, COLOR_SUCCESS
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
-from wsp.utils import current_shift_seconds, ensure_personnel, mention_or_id
+from wsp.utils import current_shift_seconds, ensure_personnel, mention_or_id, sync_duty_role
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -179,6 +179,8 @@ async def start_shift_for(interaction: discord.Interaction) -> None:
     rank_name = record["rank_name"] if record else None
     callsign = (record["callsign"] if record else None) or None
     shift_id = await bot.db.start_shift(interaction.guild.id, member.id, rank_name, callsign)
+    cfg = await bot.guild_config(interaction.guild.id)
+    await sync_duty_role(member, cfg, True)
     await bot.db.log_activity(interaction.guild.id, member.id, "shift_start", f"Shift #{shift_id}")
     await bot.db.audit(
         interaction.guild.id,
@@ -196,7 +198,7 @@ async def start_shift_for(interaction: discord.Interaction) -> None:
 
 async def _pause_shift(interaction: discord.Interaction) -> None:
     bot: WSPBot = interaction.client  # type: ignore[assignment]
-    if not interaction.guild:
+    if not interaction.guild or not isinstance(interaction.user, discord.Member):
         await _reply_ephemeral(interaction, error_embed("Unavailable"))
         return
     row = await bot.db.active_shift(interaction.guild.id, interaction.user.id)
@@ -207,6 +209,8 @@ async def _pause_shift(interaction: discord.Interaction) -> None:
         await _reply_ephemeral(interaction, error_embed("Already paused"))
         return
     await bot.db.update_shift(row["id"], status="paused", pause_started=now_ts())
+    cfg = await bot.guild_config(interaction.guild.id)
+    await sync_duty_role(interaction.user, cfg, False)
     await bot.db.audit(
         interaction.guild.id,
         "shift_pause",
@@ -221,7 +225,7 @@ async def _pause_shift(interaction: discord.Interaction) -> None:
 
 async def _resume_shift(interaction: discord.Interaction) -> None:
     bot: WSPBot = interaction.client  # type: ignore[assignment]
-    if not interaction.guild:
+    if not interaction.guild or not isinstance(interaction.user, discord.Member):
         await _reply_ephemeral(interaction, error_embed("Unavailable"))
         return
     row = await bot.db.active_shift(interaction.guild.id, interaction.user.id)
@@ -235,6 +239,8 @@ async def _resume_shift(interaction: discord.Interaction) -> None:
         pause_started=None,
         paused_seconds=int(row["paused_seconds"] or 0) + extra,
     )
+    cfg = await bot.guild_config(interaction.guild.id)
+    await sync_duty_role(interaction.user, cfg, True)
     await bot.db.audit(
         interaction.guild.id,
         "shift_resume",
@@ -249,7 +255,7 @@ async def _resume_shift(interaction: discord.Interaction) -> None:
 
 async def _end_shift(interaction: discord.Interaction) -> None:
     bot: WSPBot = interaction.client  # type: ignore[assignment]
-    if not interaction.guild:
+    if not interaction.guild or not isinstance(interaction.user, discord.Member):
         await _reply_ephemeral(interaction, error_embed("Unavailable"))
         return
     row = await bot.db.active_shift(interaction.guild.id, interaction.user.id)
@@ -264,6 +270,8 @@ async def _end_shift(interaction: discord.Interaction) -> None:
         row = await bot.db.get_shift(row["id"])
     duration = bot.db.effective_shift_seconds(row)
     await bot.db.update_shift(row["id"], status="completed", end_time=end, duration_seconds=duration)
+    cfg = await bot.guild_config(interaction.guild.id)
+    await sync_duty_role(interaction.user, cfg, False)
     await bot.db.log_activity(interaction.guild.id, interaction.user.id, "shift_end", format_duration(duration))
     await bot.db.audit(
         interaction.guild.id,

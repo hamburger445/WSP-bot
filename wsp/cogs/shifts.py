@@ -12,7 +12,7 @@ from wsp.constants import PermissionLevel
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.permissions import has_level
-from wsp.utils import current_shift_seconds, mention_or_id
+from wsp.utils import current_shift_seconds, member_from_id, mention_or_id, sync_duty_role
 from wsp.views.shifts import ShiftActionView, ShiftMenuView, build_duty_board, build_leaderboard, build_shift_controls, start_shift_for
 
 if TYPE_CHECKING:
@@ -119,6 +119,11 @@ class Shifts(commands.Cog):
             duration = self.bot.db.effective_shift_seconds(row)
             fields.update(status="completed", end_time=end, duration_seconds=duration)
         await self.bot.db.update_shift(shift_id, **fields)
+        if fields.get("status") == "completed":
+            cfg = await self.bot.guild_config(interaction.guild.id)
+            member = await member_from_id(self.bot, interaction.guild, int(row["discord_id"]))
+            if member:
+                await sync_duty_role(member, cfg, False)
         await self.bot.db.audit(
             interaction.guild.id, "shift_correct", actor_id=interaction.user.id, actor_name=str(interaction.user),
             target_id=row["discord_id"], details=f"#{shift_id} {fields}",

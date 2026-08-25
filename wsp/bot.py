@@ -121,6 +121,8 @@ class WSPBot(commands.Bot):
         )
         for guild in self.guilds:
             cfg = await self.guild_config(guild.id)
+            if cfg.apply_published_structure():
+                await self.save_config(guild.id, cfg)
             await self.db.ensure_ranks(guild.id, cfg)
         if not self._synced:
             try:

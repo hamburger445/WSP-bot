@@ -9,7 +9,7 @@ import discord
 from wsp.constants import COLOR_DANGER, COLOR_GOLD, COLOR_NAVY
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed
-from wsp.utils import ensure_personnel, sync_rank_roles
+from wsp.utils import ensure_personnel, member_from_id, sync_duty_role, sync_rank_roles
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -137,6 +137,11 @@ async def fire_member(
 
 
 async def reset_shift_data(bot: WSPBot, guild: discord.Guild, actor: discord.abc.User) -> int:
+    cfg = await bot.guild_config(guild.id)
+    for row in await bot.db.list_active_shifts(guild.id):
+        member = await member_from_id(bot, guild, int(row["discord_id"]))
+        if member:
+            await sync_duty_role(member, cfg, False)
     deleted = await bot.db.reset_shifts(guild.id)
     await bot.db.audit(
         guild.id,
@@ -254,6 +259,10 @@ async def end_active_shift(bot: WSPBot, guild: discord.Guild, discord_id: int) -
     from wsp.cogs.quota import apply_shift_quota
 
     await apply_shift_quota(bot, guild.id, discord_id, duration)
+    cfg = await bot.guild_config(guild.id)
+    member = await member_from_id(bot, guild, discord_id)
+    if member:
+        await sync_duty_role(member, cfg, False)
     await bot.notify(
         guild,
         "shift_log",

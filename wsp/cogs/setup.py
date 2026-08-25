@@ -22,6 +22,10 @@ ROLE_SPECS = [
     ("command", "Command staff"),
     ("supervisor", "Field supervision"),
     ("superintendent", "Department head"),
+    ("on_duty", "On duty"),
+    ("high_rank", "High ranking (Lieutenant and above)"),
+    ("middle_rank", "Middle ranking (Sergeant)"),
+    ("low_rank", "Low ranking"),
 ]
 
 RANK_BIND = [
@@ -29,12 +33,10 @@ RANK_BIND = [
     ("trooper", "Trooper"),
     ("senior_trooper", "Senior Trooper"),
     ("master_trooper", "Master Trooper"),
-    ("corporal", "Corporal"),
     ("sergeant", "Sergeant"),
     ("lieutenant", "Lieutenant"),
     ("captain", "Captain"),
     ("major", "Major"),
-    ("lieutenant_colonel", "Lieutenant Colonel"),
     ("colonel", "Colonel"),
     ("superintendent_rank", "Superintendent"),
 ]
@@ -69,6 +71,10 @@ WIZARD_STEPS: list[WizardStep] = [
     WizardStep("role", "command", "Which role is Command?"),
     WizardStep("role", "supervisor", "Which role is Supervisor?"),
     WizardStep("role", "superintendent", "Which role is Superintendent?"),
+    WizardStep("role", "on_duty", "Which role is given while on duty?"),
+    WizardStep("role", "high_rank", "Which role is High Rank (Lieutenant and above)?"),
+    WizardStep("role", "middle_rank", "Which role is Middle Rank (Sergeant)?"),
+    WizardStep("role", "low_rank", "Which role is Low Rank?"),
     *[WizardStep("rank", name, f"Which role is {name}?") for _param, name in RANK_BIND],
     WizardStep("category", "logs", "Which category should log channels live in?"),
     WizardStep("category", "command", "Which category should command channels live in?"),
@@ -126,6 +132,9 @@ class Setup(commands.Cog):
             cid = cfg.category_id(key)
             if cid and guild.get_channel(cid) is None:
                 missing_discord.append(f"category {key} (`{cid}`)")
+        for rid in cfg.fire_role_ids():
+            if guild.get_role(rid) is None:
+                missing_discord.append(f"fire extra role (`{rid}`)")
         tables = await self.bot.db.fetchall("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         table_names = [r["name"] for r in tables]
         required_tables = ["personnel", "shifts", "audit_log", "loa_requests"]
