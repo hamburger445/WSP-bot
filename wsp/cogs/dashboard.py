@@ -31,19 +31,6 @@ class Dashboard(commands.Cog):
         embed = await overview_embed(self.bot, interaction.guild)
         await interaction.response.send_message(embed=embed, view=DashboardView(), ephemeral=True)
 
-    @app_commands.command(name="audit", description="View recent department audit log entries.")
-    @has_level(PermissionLevel.HR)
-    async def audit(self, interaction: discord.Interaction, action: str | None = None) -> None:
-        if not interaction.guild:
-            return
-        rows = await self.bot.db.list_audit(interaction.guild.id, 20, action)
-        embed = base_embed("Audit log")
-        embed.description = "\n".join(
-            f"{ts_rel(r['created_at'])} `{r['action']}` {r['actor_name'] or ''} → {r['target_name'] or r['target_id'] or ''} {r['details'] or ''}"
-            for r in rows
-        )[:4000] or "No entries."
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
 
 async def overview_embed(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
     counts = await bot.db.dashboard_counts(guild.id)

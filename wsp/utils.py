@@ -132,6 +132,37 @@ async def member_from_id(bot: WSPBot, guild: discord.Guild | None, user_id: int)
     return found if isinstance(found, discord.Member) else None
 
 
+def member_can_start_shift(member: discord.Member, cfg) -> bool:
+    rid = cfg.role_id("shift_certified")
+    if not rid:
+        return False
+    return any(role.id == rid for role in member.roles)
+
+
+def quota_required_minutes(member: discord.Member | None, cfg, rank_name: str | None = None) -> int:
+    high = int(cfg.get("quota", "high_minutes") or 30)
+    middle = int(cfg.get("quota", "middle_minutes") or 75)
+    low = int(cfg.get("quota", "low_minutes") or 90)
+    if member is not None:
+        ids = {role.id for role in member.roles}
+        if cfg.role_id("high_rank") in ids:
+            return high
+        if cfg.role_id("middle_rank") in ids:
+            return middle
+        if cfg.role_id("low_rank") in ids:
+            return low
+    band = rank_band(rank_name)
+    if band == "high":
+        return high
+    if band == "middle":
+        return middle
+    return low
+
+
+def hms_to_seconds(hours: int | None, minutes: int | None, seconds: int | None) -> int:
+    return max(0, int(hours or 0) * 3600 + int(minutes or 0) * 60 + int(seconds or 0))
+
+
 def mention_or_id(guild: discord.Guild | None, discord_id: str | int | None) -> str:
     if not discord_id:
         return "—"

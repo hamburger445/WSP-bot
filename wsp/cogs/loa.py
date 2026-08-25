@@ -37,67 +37,16 @@ class LOA(commands.Cog):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
-        cfg = await self.bot.guild_config(interaction.guild.id)
-        tz = cfg.get("timezone") or "America/Chicago"
-        start = parse_date(start_date, tz)
-        end = parse_date(end_date, tz)
-        if not start or not end or end <= start:
-            await interaction.response.send_message(
-                embed=error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`. End must be after start."),
-                ephemeral=True,
-            )
-            return
-        max_days = int(cfg.get("loa", "max_days") or 30)
-        if end - start > max_days * 86400:
-            await interaction.response.send_message(
-                embed=error_embed("Too long", f"LOA may not exceed {max_days} days. Contact HR for exceptions."),
-                ephemeral=True,
-            )
-            return
-        await ensure_personnel(self.bot, interaction.user)
-        loa_id = await self.bot.db.create_loa(interaction.guild.id, interaction.user.id, start, end, reason, additional_information)
-        await self.bot.db.audit(
-            interaction.guild.id, "loa_request", actor_id=interaction.user.id, actor_name=str(interaction.user),
-            details=f"#{loa_id} {start_date} → {end_date}",
+        ok, embed = await create_loa_request(
+            self.bot,
+            interaction.guild,
+            interaction.user,
+            start_date,
+            end_date,
+            reason,
+            additional_information,
         )
-        public = base_embed("LOA request submitted", f"{interaction.user.mention}  •  `{loa_id}`", color=COLOR_GOLD)
-        add_fields(
-            public,
-            [
-                ("Start", ts(start), True),
-                ("End", ts(end), True),
-                ("Reason", reason, False),
-                ("Additional", additional_information or "—", False),
-            ],
-        )
-        view = LOADecisionView(loa_id)
-        await interaction.response.send_message(
-            embed=success_embed(
-                "Request submitted",
-                f"LOA `#{loa_id}` is on file. You will be notified when a decision is made.",
-            ),
-            ephemeral=True,
-        )
-        channel_id = cfg.channel_id("loa")
-        hr_id = cfg.channel_id("hr_log")
-        channel = interaction.guild.get_channel(channel_id) if channel_id else None
-        review_on_loa = not hr_id or hr_id == channel_id
-        if isinstance(channel, discord.TextChannel):
-            await channel.send(embed=public, view=view if review_on_loa else None)
-        if hr_id and not review_on_loa:
-            await self.bot.notify(interaction.guild, "hr_log", public, view=view)
-        elif not isinstance(channel, discord.TextChannel):
-            await self.bot.notify(interaction.guild, "hr_log", public, view=view)
-
-    @loa.command(name="approve", description="Approve a pending LOA request.")
-    @has_level(PermissionLevel.HR)
-    async def approve(self, interaction: discord.Interaction, request_id: int, note: str | None = None) -> None:
-        await _decide_loa(self.bot, interaction, request_id, "approved", note)
-
-    @loa.command(name="deny", description="Deny a pending LOA request.")
-    @has_level(PermissionLevel.HR)
-    async def deny(self, interaction: discord.Interaction, request_id: int, note: str) -> None:
-        await _decide_loa(self.bot, interaction, request_id, "denied", note)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @loa.command(name="active", description="List personnel currently on approved LOA.")
     @has_level(PermissionLevel.HR)
@@ -121,10 +70,50 @@ class LOA(commands.Cog):
             "Need time away from duty? Use **Submit request** below, or `/loa request`.\n\n"
             "Dates must be `YYYY-MM-DD` (example: `2026-09-01`). Include a reason.\n"
             "Approved leave covers you for weekly quota during those dates.\n"
-            "You will be notified when your request is reviewed.\n\n"
+            "HR reviews requests with Accept / Deny in the LOA channel.\n"
             "Use **My requests** to check status.",
         )
         await interaction.response.send_message(embed=embed, view=LOAMenuView(), ephemeral=True)
+
+
+async def create_loa_request(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.Member,
+    start_date: str,
+    end_date: str,
+    reason: str,
+    additional_information: str | None = None,
+) -> tuple[bool, discord.Embed]:
+    cfg = await bot.guild_config(guild.id)
+    tz = cfg.get("timezone") or "America/Chicago"
+    start = parse_date(start_date, tz)
+    end = parse_date(end_date, tz)
+    if not start or not end or end <= start:
+        return False, error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`. End must be after start.")
+    max_days = int(cfg.get("loa", "max_days") or 30)
+    if end - start > max_days * 86400:
+        return False, error_embed("Too long", f"LOA may not exceed {max_days} days. Contact HR for exceptions.")
+    await ensure_personnel(bot, member)
+    loa_id = await bot.db.create_loa(guild.id, member.id, start, end, reason, additional_information)
+    await bot.db.audit(
+        guild.id, "loa_request", actor_id=member.id, actor_name=str(member),
+        details=f"#{loa_id} {start_date} → {end_date}",
+    )
+    public = base_embed("LOA request submitted", f"{member.mention}  •  `{loa_id}`", color=COLOR_GOLD)
+    add_fields(
+        public,
+        [
+            ("Start", ts(start), True),
+            ("End", ts(end), True),
+            ("Reason", reason, False),
+            ("Additional", additional_information or "—", False),
+        ],
+    )
+    posted = await _post_loa_review(bot, guild, public, LOADecisionView(loa_id))
+    if not posted:
+        return False, error_embed("Could not post request", "The LOA review channel is missing or I cannot send there.")
+    return True, success_embed("Request submitted", f"LOA `#{loa_id}` is on file. You will be notified when a decision is made.")
 
 
 class LOAMenuView(discord.ui.View):
@@ -178,7 +167,7 @@ class ApproveLOAButton(discord.ui.DynamicItem[discord.ui.Button], template=r"wsp
     def __init__(self, loa_id: int = 0) -> None:
         super().__init__(
             discord.ui.Button(
-                label="Approve",
+                label="Accept",
                 style=discord.ButtonStyle.success,
                 custom_id=f"wsp:loa:approve:{loa_id}",
             )
@@ -234,6 +223,25 @@ class LOADenyModal(discord.ui.Modal, title="Deny LOA"):
         await _decide_loa(interaction.client, interaction, self.loa_id, "denied", str(self.note.value))  # type: ignore[arg-type]
 
 
+async def _post_loa_review(bot: WSPBot, guild: discord.Guild, embed: discord.Embed, view: discord.ui.View) -> bool:
+    cfg = await bot.guild_config(guild.id)
+    channel_id = cfg.channel_id("loa")
+    channel = guild.get_channel(channel_id) if channel_id else None
+    if channel is None and channel_id:
+        try:
+            fetched = await bot.fetch_channel(channel_id)
+        except discord.HTTPException:
+            fetched = None
+        channel = fetched if isinstance(fetched, discord.TextChannel) else None
+    if isinstance(channel, discord.TextChannel):
+        try:
+            await channel.send(embed=embed, view=view)
+            return True
+        except discord.HTTPException:
+            return False
+    return False
+
+
 async def _decide_loa(bot: WSPBot, interaction: discord.Interaction, loa_id: int, status: str, note: str | None) -> None:
     if not interaction.guild:
         return
@@ -241,9 +249,9 @@ async def _decide_loa(bot: WSPBot, interaction: discord.Interaction, loa_id: int
 
     if await resolve_level(interaction) < PermissionLevel.HR:
         if interaction.response.is_done():
-            await interaction.followup.send(embed=error_embed("Restricted", "HR or Command required."), ephemeral=True)
+            await interaction.followup.send(embed=error_embed("Restricted", "HR only."), ephemeral=True)
         else:
-            await interaction.response.send_message(embed=error_embed("Restricted", "HR or Command required."), ephemeral=True)
+            await interaction.response.send_message(embed=error_embed("Restricted", "HR only."), ephemeral=True)
         return
     row = await bot.db.get_loa(loa_id)
     if row is None:
@@ -266,7 +274,11 @@ async def _decide_loa(bot: WSPBot, interaction: discord.Interaction, loa_id: int
     if note:
         embed.add_field(name="Note", value=note, inline=False)
     await _reply(interaction, embed)
-    await bot.notify(interaction.guild, "loa", embed)
+    if interaction.message:
+        try:
+            await interaction.message.edit(embed=embed, view=None)
+        except discord.HTTPException:
+            pass
     await bot.notify(interaction.guild, "notifications", embed)
     if status == "approved":
         member_embed = success_embed(

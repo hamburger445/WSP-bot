@@ -17,35 +17,34 @@ if TYPE_CHECKING:
 
 MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
     ("Duty", "Shifts and quota", [
-        "`/shift menu` — public start, pause, resume, and end buttons",
-        "`/shift data` — public duty board and leaderboard",
-        "`/shift start` `/shift status` `/shift leaderboard` `/shift history`",
+        "`/shift menu` or `?shift menu` — start, pause, resume, and end",
+        "`/shift data` `?shift data` — duty board and leaderboard",
+        "`/shift status` `/shift leaderboard` `/shift history`",
         "`/quota view` `/quota leaderboard`",
-        "`/profile` — your personnel file",
+        "Only certified patrol can start a shift.",
     ]),
     ("Leave", "Time away from duty", [
-        "`/loa menu` — how to request leave",
+        "`/loa menu` or `?loa menu` — how to request leave",
         "`/loa request` — dates as `YYYY-MM-DD` (example: `2026-09-01`)",
-        "You will be notified when your request is reviewed.",
+        "HR accepts or denies requests in the LOA channel.",
     ]),
     ("Help", "Command directory", [
-        "`/help` — this directory",
+        "`/help` or `?help` — this directory. Prefix commands use `?`.",
     ]),
 ]
 
 STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
-    ("Personnel", "Roster and rank", [
-        "`/personnel add` `note` `transfer` `suspend` `remove` `reinstate` `history`",
-        "`/promote` `/demote` `/fire`",
-        "`/shift correct` `/quota admin`",
+    ("Rank", "High Rank and dashboard", [
+        "`/promote` `/demote` `/fire` — HR only (also on the website)",
+        "`/shift admin start` `end` `edit` `delete` — Middle Rank and above",
+        "`/quota admin`",
     ]),
-    ("HR / Command", "Leave and logs", [
-        "`/loa approve` `/loa deny` `/loa active`",
+    ("HR", "Leave and command", [
+        "`/loa active` — HR only",
         "`/dashboard` — includes **Reset shift data**",
-        "`/audit`",
     ]),
-    ("Setup", "Owners and command staff", [
-        "`/setupserver` `/verifysetup` `/config` `/sync` `/resetserver`",
+    ("Setup", "Owner only", [
+        "`/setupserver` `/verifysetup` `/config` `/sync`",
     ]),
 ]
 
@@ -63,30 +62,21 @@ class Help(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="wsp", description="Open the Wisconsin State Patrol command directory.")
-    async def wsp(self, interaction: discord.Interaction) -> None:
-        staff = await _is_staff(interaction)
-        await interaction.response.send_message(
-            embed=_catalog_embed("members", staff),
-            view=HelpView(staff),
-            ephemeral=True,
-        )
-
 
 async def _is_staff(interaction: discord.Interaction) -> bool:
-    return await resolve_level(interaction) >= PermissionLevel.HR
+    return await resolve_level(interaction) >= PermissionLevel.SUPERVISOR
 
 
 def _catalog_embed(section: str, staff: bool) -> discord.Embed:
     if staff:
         intro = (
-            "Type **/** in Discord, then start typing a name below. "
-            "Members see how to use the bot. Staff tools are listed separately."
+            "Slash commands start with **/**. The same names also work with **?**, "
+            "for example `?shift menu` and `/shift menu`."
         )
     else:
         intro = (
-            "Type **/** in Discord, then start typing a name below. "
-            "Grouped commands appear as `/shift` or `/loa` — pick the group, then the action."
+            "Type **/** or **?** then a command name. "
+            "Grouped commands appear as `/shift` or `?shift` — pick the group, then the action."
         )
     embed = base_embed("WSP command directory", intro, color=COLOR_NAVY)
     rows = _rows_for(section, staff)

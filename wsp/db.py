@@ -788,6 +788,9 @@ class Database:
             (str(guild_id), limit),
         )
 
+    async def delete_shift(self, shift_id: int) -> None:
+        await self.execute("DELETE FROM shifts WHERE id = ?", (shift_id,))
+
     async def list_active_shifts(self, guild_id: int) -> list[aiosqlite.Row]:
         return await self.fetchall(
             "SELECT * FROM shifts WHERE guild_id = ? AND status IN ('active', 'paused') ORDER BY start_time",

@@ -22,7 +22,7 @@ class Promotions(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="promote", description="Promote a WSP member and update Discord roles.")
-    @has_level(PermissionLevel.COMMAND)
+    @has_level(PermissionLevel.HR)
     async def promote(
         self,
         interaction: discord.Interaction,
@@ -34,7 +34,7 @@ class Promotions(commands.Cog):
         await self._rank(interaction, member, rank, reason, authorizing_command, "promotion")
 
     @app_commands.command(name="demote", description="Demote a WSP member and update Discord roles.")
-    @has_level(PermissionLevel.COMMAND)
+    @has_level(PermissionLevel.HR)
     async def demote(
         self,
         interaction: discord.Interaction,
@@ -46,7 +46,7 @@ class Promotions(commands.Cog):
         await self._rank(interaction, member, rank, reason, authorizing_command, "demotion")
 
     @app_commands.command(name="fire", description="Remove a member from WSP and strip department roles.")
-    @has_level(PermissionLevel.COMMAND)
+    @has_level(PermissionLevel.HR)
     async def fire(
         self,
         interaction: discord.Interaction,

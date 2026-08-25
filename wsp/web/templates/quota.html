@@ -7,7 +7,9 @@
   <form class="form-inline" method="post" action="/actions">
     <input type="hidden" name="next" value="/quota">
     <input type="hidden" name="action" value="quota_set">
-    <label class="field">Weekly minutes <input name="weekly_minutes" type="number" min="1" value="{{ weekly }}"></label>
+    <label class="field">Low Rank minutes <input name="low_minutes" type="number" min="1" value="{{ low }}"></label>
+    <label class="field">Middle Rank minutes <input name="middle_minutes" type="number" min="1" value="{{ middle }}"></label>
+    <label class="field">High Rank minutes <input name="high_minutes" type="number" min="1" value="{{ high }}"></label>
     <button class="gold-btn" type="submit">Save quota</button>
   </form>
 </section>

@@ -11,7 +11,7 @@ from discord.ext import commands
 from wsp.constants import PermissionLevel
 from wsp.embeds import add_fields, base_embed, error_embed, success_embed
 from wsp.permissions import has_level, resolve_level
-from wsp.utils import mention_or_id
+from wsp.utils import member_from_id, mention_or_id, quota_required_minutes
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -21,7 +21,11 @@ async def apply_shift_quota(bot: WSPBot, guild_id: int, discord_id: int, duratio
     cfg = await bot.guild_config(guild_id)
     tz = cfg.get("timezone") or "America/Chicago"
     week_id = await bot.db.ensure_week(guild_id, bot.db.week_start_ts(tz))
-    required = int(cfg.get("quota", "weekly_minutes") or 180)
+    guild = bot.get_guild(guild_id)
+    member = await member_from_id(bot, guild, discord_id) if guild else None
+    person = await bot.db.get_personnel(guild_id, discord_id)
+    rank_name = person["rank_name"] if person else None
+    required = quota_required_minutes(member, cfg, rank_name)
     minutes = max(0, duration_seconds // 60)
     loa = await bot.db.active_loa(guild_id, discord_id)
     status = "exempt_loa" if loa else None
@@ -51,7 +55,11 @@ class Quota(commands.Cog):
         week_id = await self.bot.db.ensure_week(interaction.guild.id, week)
         duty = await self.bot.db.get_quota_record(week_id, target.id, "duty")
         loa = await self.bot.db.active_loa(interaction.guild.id, target.id)
-        required = int(cfg.get("quota", "weekly_minutes") or 180)
+        member = target if isinstance(target, discord.Member) else None
+        person = await self.bot.db.get_personnel(interaction.guild.id, target.id)
+        required = quota_required_minutes(member, cfg, person["rank_name"] if person else None)
+        if duty:
+            required = int(duty["required_minutes"] or required)
         embed = base_embed(f"Weekly quota  •  {target}")
         duty_min = int(duty["completed_minutes"]) if duty else 0
         add_fields(
@@ -88,16 +96,24 @@ class Quota(commands.Cog):
     async def admin(
         self,
         interaction: discord.Interaction,
-        weekly_minutes: int | None = None,
+        low_minutes: int | None = None,
+        middle_minutes: int | None = None,
+        high_minutes: int | None = None,
         exempt_member: discord.Member | None = None,
     ) -> None:
         if not interaction.guild:
             return
         cfg = await self.bot.guild_config(interaction.guild.id)
         changed = []
-        if weekly_minutes is not None:
-            cfg.set_path(["quota", "weekly_minutes"], weekly_minutes)
-            changed.append(f"duty quota = {weekly_minutes} min")
+        if low_minutes is not None:
+            cfg.set_path(["quota", "low_minutes"], low_minutes)
+            changed.append(f"LR quota = {low_minutes} min")
+        if middle_minutes is not None:
+            cfg.set_path(["quota", "middle_minutes"], middle_minutes)
+            changed.append(f"MR quota = {middle_minutes} min")
+        if high_minutes is not None:
+            cfg.set_path(["quota", "high_minutes"], high_minutes)
+            changed.append(f"HR quota = {high_minutes} min")
         if changed:
             await self.bot.save_config(interaction.guild.id, cfg)
             await self.bot.db.audit(
@@ -110,7 +126,7 @@ class Quota(commands.Cog):
                 await self.bot.db.update_personnel(record["id"], quota_exempt=1)
             week = self.bot.db.week_start_ts(cfg.get("timezone") or "America/Chicago")
             week_id = await self.bot.db.ensure_week(interaction.guild.id, week)
-            required = int(cfg.get("quota", "weekly_minutes") or 180)
+            required = quota_required_minutes(exempt_member, cfg, record["rank_name"] if record else None)
             await self.bot.db.upsert_quota_record(week_id, exempt_member.id, "duty", required, status="exempt_loa")
             changed.append(f"exempted {exempt_member}")
         if not changed:
@@ -118,7 +134,9 @@ class Quota(commands.Cog):
             add_fields(
                 embed,
                 [
-                    ("Duty minutes / week", cfg.get("quota", "weekly_minutes"), True),
+                    ("Low Rank", f"{cfg.get('quota', 'low_minutes') or 90} min/week", True),
+                    ("Middle Rank", f"{cfg.get('quota', 'middle_minutes') or 75} min/week", True),
+                    ("High Rank", f"{cfg.get('quota', 'high_minutes') or 30} min/week", True),
                     ("Timezone", cfg.get("timezone"), True),
                 ],
             )

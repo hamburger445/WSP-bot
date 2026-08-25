@@ -236,11 +236,25 @@ class GuildConfig:
         if current_fire != wanted_fire:
             self._data["fire_roles"] = list(defaults.get("fire_roles") or [])
             changed = True
-        for key in ("on_duty", "high_rank", "middle_rank", "low_rank"):
+        for key in ("on_duty", "high_rank", "middle_rank", "low_rank", "shift_certified"):
             wanted = str((defaults.get("roles") or {}).get(key) or "")
             current = str((self._data.get("roles") or {}).get(key) or "")
             if current != wanted:
                 self.set_path(["roles", key], wanted)
+                changed = True
+        wanted_loa = str((defaults.get("channels") or {}).get("loa") or "")
+        current_loa = str((self._data.get("channels") or {}).get("loa") or "")
+        if wanted_loa and current_loa != wanted_loa:
+            self.set_path(["channels", "loa"], wanted_loa)
+            changed = True
+        quota_defaults = defaults.get("quota") or {}
+        quota = self._data.setdefault("quota", {})
+        if not isinstance(quota, dict):
+            quota = {}
+            self._data["quota"] = quota
+        for key in ("low_minutes", "middle_minutes", "high_minutes"):
+            if key in quota_defaults and quota.get(key) in (None, ""):
+                quota[key] = quota_defaults[key]
                 changed = True
         return changed
 

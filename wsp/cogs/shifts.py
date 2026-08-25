@@ -9,11 +9,18 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import PermissionLevel
-from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
-from wsp.permissions import has_level
-from wsp.utils import current_shift_seconds, member_from_id, mention_or_id, sync_duty_role
-from wsp.views.shifts import ShiftActionView, ShiftMenuView, build_duty_board, build_leaderboard, build_shift_controls, start_shift_for
+from wsp.permissions import has_level, resolve_level
+from wsp.utils import current_shift_seconds, hms_to_seconds, member_can_start_shift, mention_or_id, sync_duty_role
+from wsp.views.shifts import (
+    ShiftActionView,
+    ShiftMenuView,
+    begin_shift,
+    build_duty_board,
+    build_leaderboard,
+    build_shift_controls,
+    complete_shift,
+)
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -24,16 +31,21 @@ class Shifts(commands.Cog):
         self.bot = bot
 
     shift = app_commands.Group(name="shift", description="Duty shift management")
+    admin = app_commands.Group(name="admin", description="Start, end, edit, or delete a member's shifts.", parent=shift)
 
     @shift.command(name="menu", description="Post public start, pause, resume, and end buttons.")
     async def menu(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
         row = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
         status = row["status"] if row else None
+        cfg = await self.bot.guild_config(interaction.guild.id)
         embed = await build_shift_controls(status)
-        await interaction.response.send_message(embed=embed, view=ShiftActionView(status))
+        await interaction.response.send_message(
+            embed=embed,
+            view=ShiftActionView(status, can_start=member_can_start_shift(interaction.user, cfg)),
+        )
 
     @shift.command(name="data", description="Post the public duty board and leaderboard.")
     async def data(self, interaction: discord.Interaction) -> None:
@@ -74,10 +86,11 @@ class Shifts(commands.Cog):
             return
         target = member or interaction.user
         if member and member.id != interaction.user.id:
-            from wsp.permissions import resolve_level
-
             if await resolve_level(interaction) < PermissionLevel.SUPERVISOR:
-                await interaction.response.send_message(embed=error_embed("Restricted", "Supervisors and above can view other members' history."), ephemeral=True)
+                await interaction.response.send_message(
+                    embed=error_embed("Restricted", "Middle Rank and above can view other members' history."),
+                    ephemeral=True,
+                )
                 return
         rows = await self.bot.db.list_shifts(interaction.guild.id, target.id, limit=12)
         totals = await self.bot.db.shift_totals(interaction.guild.id, target.id)
@@ -90,54 +103,130 @@ class Shifts(commands.Cog):
         ) or "No records."
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @shift.command(name="correct", description="Manually correct a shift record (supervisor/HR).")
+    @admin.command(name="start", description="Start a duty shift for a member.")
     @has_level(PermissionLevel.SUPERVISOR)
-    async def correct(
+    async def admin_start(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        result = await begin_shift(self.bot, interaction.guild, member, interaction.user)
+        await _admin_reply(interaction, result)
+
+    @admin.command(name="end", description="End a member's active shift.")
+    @has_level(PermissionLevel.SUPERVISOR)
+    async def admin_end(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        result = await complete_shift(self.bot, interaction.guild, member, interaction.user)
+        await _admin_reply(interaction, result)
+
+    @admin.command(name="edit", description="Set a shift duration in hours, minutes, and seconds.")
+    @has_level(PermissionLevel.SUPERVISOR)
+    @app_commands.describe(
+        member="Member who owns the shift",
+        shift_id="Shift ID from history",
+        hours="Hours on duty",
+        minutes="Minutes on duty",
+        seconds="Seconds on duty",
+    )
+    async def admin_edit(
         self,
         interaction: discord.Interaction,
+        member: discord.Member,
         shift_id: int,
-        duration_minutes: int | None = None,
-        callsign: str | None = None,
-        notes: str | None = None,
-        force_end: bool = False,
+        hours: int = 0,
+        minutes: int = 0,
+        seconds: int = 0,
     ) -> None:
         if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        duration = hms_to_seconds(hours, minutes, seconds)
+        if duration <= 0:
+            await interaction.response.send_message(
+                embed=error_embed("Invalid duration", "Enter hours, minutes, and/or seconds greater than zero."),
+                ephemeral=True,
+            )
             return
         row = await self.bot.db.get_shift(shift_id)
-        if row is None or str(row["guild_id"]) != str(interaction.guild.id):
-            await interaction.response.send_message(embed=error_embed("Not found"), ephemeral=True)
+        if row is None or str(row["guild_id"]) != str(interaction.guild.id) or str(row["discord_id"]) != str(member.id):
+            await interaction.response.send_message(embed=error_embed("Not found", "That shift does not belong to this member."), ephemeral=True)
             return
-        fields: dict = {"notes": notes or row["notes"]}
-        if callsign:
-            fields["callsign"] = callsign
-        if duration_minutes is not None:
-            fields["duration_seconds"] = duration_minutes * 60
-            fields["status"] = "completed"
-            fields["end_time"] = int(row["start_time"]) + duration_minutes * 60
-        if force_end and row["status"] in {"active", "paused"}:
-            end = now_ts()
-            duration = self.bot.db.effective_shift_seconds(row)
-            fields.update(status="completed", end_time=end, duration_seconds=duration)
-        await self.bot.db.update_shift(shift_id, **fields)
-        if fields.get("status") == "completed":
-            cfg = await self.bot.guild_config(interaction.guild.id)
-            member = await member_from_id(self.bot, interaction.guild, int(row["discord_id"]))
-            if member:
-                await sync_duty_role(member, cfg, False)
-        await self.bot.db.audit(
-            interaction.guild.id, "shift_correct", actor_id=interaction.user.id, actor_name=str(interaction.user),
-            target_id=row["discord_id"], details=f"#{shift_id} {fields}",
+        was_open = row["status"] in {"active", "paused"}
+        end_time = int(row["start_time"]) + duration
+        await self.bot.db.update_shift(
+            shift_id,
+            status="completed",
+            end_time=end_time,
+            duration_seconds=duration,
+            pause_started=None,
         )
-        await interaction.response.send_message(embed=success_embed("Shift corrected", f"Record `#{shift_id}` updated."), ephemeral=True)
+        if was_open:
+            cfg = await self.bot.guild_config(interaction.guild.id)
+            await sync_duty_role(member, cfg, False)
+            from wsp.cogs.quota import apply_shift_quota
+
+            await apply_shift_quota(self.bot, interaction.guild.id, member.id, duration)
+        await self.bot.db.audit(
+            interaction.guild.id,
+            "shift_edit",
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            target_id=member.id,
+            target_name=str(member),
+            details=f"#{shift_id} → {format_duration(duration)}",
+        )
+        notice = success_embed("Shift updated", f"{member.mention} shift `#{shift_id}` is now **{format_duration(duration)}**.")
+        await interaction.response.send_message(embed=notice, ephemeral=True)
         await self.bot.notify(
             interaction.guild,
             "shift_log",
-            base_embed("Shift corrected", f"{interaction.user.mention} updated shift `#{shift_id}`."),
+            base_embed("Shift edited", f"{interaction.user.mention} set {member.mention} shift `#{shift_id}` to **{format_duration(duration)}**."),
         )
 
-    @shift.command(name="start", description="Start a duty shift.")
-    async def start(self, interaction: discord.Interaction) -> None:
-        await start_shift_for(interaction)
+    @admin.command(name="delete", description="Delete a shift record for a member.")
+    @has_level(PermissionLevel.SUPERVISOR)
+    async def admin_delete(self, interaction: discord.Interaction, member: discord.Member, shift_id: int) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        row = await self.bot.db.get_shift(shift_id)
+        if row is None or str(row["guild_id"]) != str(interaction.guild.id) or str(row["discord_id"]) != str(member.id):
+            await interaction.response.send_message(embed=error_embed("Not found", "That shift does not belong to this member."), ephemeral=True)
+            return
+        if row["status"] in {"active", "paused"}:
+            cfg = await self.bot.guild_config(interaction.guild.id)
+            await sync_duty_role(member, cfg, False)
+        await self.bot.db.delete_shift(shift_id)
+        await self.bot.db.audit(
+            interaction.guild.id,
+            "shift_delete",
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            target_id=member.id,
+            target_name=str(member),
+            details=f"#{shift_id}",
+        )
+        await interaction.response.send_message(
+            embed=success_embed("Shift deleted", f"Removed shift `#{shift_id}` for {member.mention}."),
+            ephemeral=True,
+        )
+        await self.bot.notify(
+            interaction.guild,
+            "shift_log",
+            base_embed("Shift deleted", f"{interaction.user.mention} deleted {member.mention} shift `#{shift_id}`."),
+        )
+
+
+async def _admin_reply(interaction: discord.Interaction, result) -> None:
+    bot: WSPBot = interaction.client  # type: ignore[assignment]
+    if result.error:
+        await interaction.response.send_message(embed=error_embed("Shift admin", result.error), ephemeral=True)
+        return
+    if interaction.guild and result.log:
+        await bot.notify(interaction.guild, "shift_log", result.log)
+    await interaction.response.send_message(embed=result.notice, ephemeral=True)
 
 
 async def setup(bot: WSPBot) -> None:

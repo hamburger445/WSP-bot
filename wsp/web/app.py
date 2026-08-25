@@ -306,12 +306,14 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
         gid = guild_id()
         cfg = await bot.guild_config(gid) if gid else None
         rows: list[Any] = []
-        weekly = 180
+        low, middle, high = 90, 75, 30
         if gid and cfg:
             week_id = await db.ensure_week(gid, db.week_start_ts(cfg.get("timezone") or "America/Chicago"))
             rows = [r for r in await db.list_quota_records(week_id) if r["quota_type"] == "duty"]
-            weekly = int(cfg.get("quota", "weekly_minutes") or 180)
-        return render("quota.html", ctx(request, page="quota", rows=rows, weekly=weekly))
+            low = int(cfg.get("quota", "low_minutes") or 90)
+            middle = int(cfg.get("quota", "middle_minutes") or 75)
+            high = int(cfg.get("quota", "high_minutes") or 30)
+        return render("quota.html", ctx(request, page="quota", rows=rows, low=low, middle=middle, high=high))
 
     @app.get("/loa", response_class=HTMLResponse)
     async def loa_page(request: Request) -> Any:
@@ -354,6 +356,9 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
         content: str | None = Form(None),
         loa_id: int | None = Form(None),
         weekly_minutes: int | None = Form(None),
+        low_minutes: int | None = Form(None),
+        middle_minutes: int | None = Form(None),
+        high_minutes: int | None = Form(None),
         next: str = Form("/"),
     ) -> Any:
         bounce = gated(request)
@@ -379,6 +384,9 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 content=content,
                 loa_id=loa_id,
                 weekly_minutes=weekly_minutes,
+                low_minutes=low_minutes,
+                middle_minutes=middle_minutes,
+                high_minutes=high_minutes,
             )
         except ValueError as exc:
             return bounce_to(next, err=str(exc))
@@ -399,11 +407,25 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             deleted = await reset_shift_data(bot, g, actor)
             return f"Cleared {deleted} shift record(s) and duty quota totals."
 
-        if action == "quota_set" and kwargs["weekly_minutes"] is not None:
+        if action == "quota_set":
             cfg = await bot.guild_config(g.id)
-            cfg.set_path(["quota", "weekly_minutes"], int(kwargs["weekly_minutes"]))
-            await bot.save_config(g.id, cfg)
-            return f"Weekly quota set to {kwargs['weekly_minutes']} minutes."
+            parts = []
+            if kwargs.get("low_minutes") is not None:
+                cfg.set_path(["quota", "low_minutes"], int(kwargs["low_minutes"]))
+                parts.append(f"LR {kwargs['low_minutes']}")
+            if kwargs.get("middle_minutes") is not None:
+                cfg.set_path(["quota", "middle_minutes"], int(kwargs["middle_minutes"]))
+                parts.append(f"MR {kwargs['middle_minutes']}")
+            if kwargs.get("high_minutes") is not None:
+                cfg.set_path(["quota", "high_minutes"], int(kwargs["high_minutes"]))
+                parts.append(f"HR {kwargs['high_minutes']}")
+            if kwargs.get("weekly_minutes") is not None and not parts:
+                cfg.set_path(["quota", "low_minutes"], int(kwargs["weekly_minutes"]))
+                parts.append(f"LR {kwargs['weekly_minutes']}")
+            if parts:
+                await bot.save_config(g.id, cfg)
+                return "Quota updated: " + ", ".join(parts)
+            return "No quota values submitted."
 
         if action in {"loa_approve", "loa_deny"} and kwargs["loa_id"]:
             status = "approved" if action == "loa_approve" else "denied"

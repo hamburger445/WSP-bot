@@ -9,9 +9,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from wsp.constants import COLOR_NAVY, PermissionLevel
+from wsp.constants import COLOR_NAVY
 from wsp.embeds import add_fields, base_embed, error_embed, success_embed, warning_embed
-from wsp.permissions import has_level, is_owner
+from wsp.permissions import is_owner
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -26,6 +26,7 @@ ROLE_SPECS = [
     ("high_rank", "High ranking (Lieutenant and above)"),
     ("middle_rank", "Middle ranking (Sergeant)"),
     ("low_rank", "Low ranking"),
+    ("shift_certified", "Required to start a shift"),
 ]
 
 RANK_BIND = [
@@ -75,6 +76,7 @@ WIZARD_STEPS: list[WizardStep] = [
     WizardStep("role", "high_rank", "Which role is High Rank (Lieutenant and above)?"),
     WizardStep("role", "middle_rank", "Which role is Middle Rank (Sergeant)?"),
     WizardStep("role", "low_rank", "Which role is Low Rank?"),
+    WizardStep("role", "shift_certified", "Which role is required to start a shift?"),
     *[WizardStep("rank", name, f"Which role is {name}?") for _param, name in RANK_BIND],
     WizardStep("category", "logs", "Which category should log channels live in?"),
     WizardStep("category", "command", "Which category should command channels live in?"),
@@ -107,7 +109,7 @@ class Setup(commands.Cog):
         await _show_step(self.bot, interaction, step, edit=False)
 
     @app_commands.command(name="verifysetup", description="Check that required role and channel IDs are set and exist.")
-    @has_level(PermissionLevel.COMMAND)
+    @is_owner()
     async def verifysetup(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
         if guild is None:
@@ -156,7 +158,7 @@ class Setup(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="config", description="View or update department configuration keys.")
-    @has_level(PermissionLevel.SUPERINTENDENT)
+    @is_owner()
     @app_commands.describe(path="Dot path such as quota.weekly_minutes", value="New value (omit to view)")
     async def config(self, interaction: discord.Interaction, path: str | None = None, value: str | None = None) -> None:
         if interaction.guild is None:
@@ -172,7 +174,11 @@ class Setup(commands.Cog):
             embed.add_field(name="Channels", value="\n".join(f"`{k}` → `{v or 'unset'}`" for k, v in ch_preview) or "—", inline=True)
             embed.add_field(
                 name="Quota",
-                value=f"Duty `{cfg.get('quota', 'weekly_minutes')}` min/week",
+                value=(
+                    f"LR `{cfg.get('quota', 'low_minutes') or 90}`  •  "
+                    f"MR `{cfg.get('quota', 'middle_minutes') or 75}`  •  "
+                    f"HR `{cfg.get('quota', 'high_minutes') or 30}` min/week"
+                ),
                 inline=False,
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -213,25 +219,6 @@ class Setup(commands.Cog):
         else:
             synced = await self.bot.tree.sync()
         await interaction.followup.send(embed=success_embed("Commands synced", f"{len(synced)} commands published."), ephemeral=True)
-
-    @app_commands.command(name="resetserver", description="Clear stored WSP IDs for this guild. Discord roles and channels are kept.")
-    @is_owner()
-    @app_commands.describe(wipe_discord="If true, also delete the bound Discord channels (not recommended)")
-    async def resetserver(self, interaction: discord.Interaction, wipe_discord: bool = False) -> None:
-        view = ResetConfirmView(wipe_discord)
-        await interaction.response.send_message(
-            embed=warning_embed(
-                "Confirm configuration reset",
-                "This removes stored WSP IDs for this guild. Personnel records in the database are kept.\n"
-                + (
-                    "Bound Discord channels will also be deleted."
-                    if wipe_discord
-                    else "Your existing Discord roles and channels will be left in place."
-                ),
-            ),
-            view=view,
-            ephemeral=True,
-        )
 
 
 async def _show_step(bot: WSPBot, interaction: discord.Interaction, step_index: int, *, edit: bool) -> None:
@@ -448,55 +435,6 @@ def _clip(items: list[str]) -> str:
         kept.append(line)
         used += len(line) + 1
     return "\n".join(kept)
-
-
-class ResetConfirmView(discord.ui.View):
-    def __init__(self, wipe_discord: bool) -> None:
-        super().__init__(timeout=60)
-        self.wipe_discord = wipe_discord
-
-    @discord.ui.button(label="Confirm reset", style=discord.ButtonStyle.danger)
-    async def confirm(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        bot: WSPBot = interaction.client  # type: ignore[assignment]
-        guild = interaction.guild
-        if guild is None:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
-            return
-        cfg = await bot.guild_config(guild.id)
-        deleted: list[str] = []
-        if self.wipe_discord:
-            for cid in (cfg.get("channels") or {}).values():
-                try:
-                    ch = guild.get_channel(int(cid)) if cid else None
-                except (TypeError, ValueError):
-                    ch = None
-                if ch:
-                    try:
-                        await ch.delete(reason="WSP resetserver")
-                        deleted.append(getattr(ch, "name", str(ch.id)))
-                    except discord.HTTPException:
-                        pass
-            for cat_id in (cfg.get("categories") or {}).values():
-                try:
-                    cat = guild.get_channel(int(cat_id)) if cat_id else None
-                except (TypeError, ValueError):
-                    cat = None
-                if isinstance(cat, discord.CategoryChannel):
-                    try:
-                        await cat.delete(reason="WSP resetserver")
-                    except discord.HTTPException:
-                        pass
-        await bot.db.execute("DELETE FROM guild_config WHERE guild_id = ?", (str(guild.id),))
-        bot.invalidate_config(guild.id)
-        await bot.db.audit(guild.id, "resetserver", actor_id=interaction.user.id, actor_name=str(interaction.user), details=f"wipe_discord={self.wipe_discord}")
-        await interaction.response.edit_message(
-            embed=success_embed("Configuration reset", "Stored IDs cleared." + (f" Deleted: {', '.join(deleted) or 'none'}." if self.wipe_discord else "")),
-            view=None,
-        )
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        await interaction.response.edit_message(embed=base_embed("Cancelled", "No changes made."), view=None)
 
 
 async def setup(bot: WSPBot) -> None:

@@ -20,14 +20,13 @@ log = logging.getLogger("wsp.bot")
 
 COG_MODULES = [
     "wsp.cogs.setup",
-    "wsp.cogs.personnel",
-    "wsp.cogs.profile",
     "wsp.cogs.shifts",
     "wsp.cogs.quota",
     "wsp.cogs.loa",
     "wsp.cogs.promotions",
     "wsp.cogs.dashboard",
     "wsp.cogs.help",
+    "wsp.cogs.prefix",
     "wsp.cogs.tasks",
 ]
 
@@ -36,11 +35,9 @@ class WSPBot(commands.Bot):
     def __init__(self, settings: Settings, db: Database) -> None:
         intents = discord.Intents.default()
         intents.guilds = True
-        # Privileged intents (members / message content) will keep the bot
-        # completely offline if they are not enabled in the Developer Portal.
         intents.members = False
-        intents.message_content = False
-        super().__init__(command_prefix="!", intents=intents, help_command=None)
+        intents.message_content = True
+        super().__init__(command_prefix="?", intents=intents, help_command=None, case_insensitive=True)
         self.settings = settings
         self.db = db
         self.github_db = None
@@ -252,6 +249,47 @@ class WSPBot(commands.Bot):
                 actor_name=str(interaction.user),
                 details=f"/{interaction.command.qualified_name}",
             )
+
+    async def on_command(self, ctx: commands.Context) -> None:
+        if ctx.command is None:
+            return
+        guild_id = ctx.guild.id if ctx.guild else 0
+        await self.db.audit(
+            guild_id,
+            "command",
+            actor_id=ctx.author.id,
+            actor_name=str(ctx.author),
+            details=f"?{ctx.command.qualified_name}",
+        )
+
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        if isinstance(error, commands.CommandNotFound):
+            return
+        orig = error.original if isinstance(error, commands.CommandInvokeError) else error
+        if isinstance(error, (commands.CheckFailure, commands.MissingRequiredArgument, commands.BadArgument)):
+            embed = discord.Embed(
+                title="Command failed",
+                description=str(error) or "That command could not be run.",
+                color=COLOR_DANGER,
+            )
+            embed.set_footer(text=FOOTER)
+            try:
+                await ctx.send(embed=embed)
+            except discord.HTTPException:
+                pass
+            return
+        log.error("Prefix command error:\n%s", "".join(traceback.format_exception(error)))
+        try:
+            await ctx.send(
+                embed=discord.Embed(
+                    title="Command failed",
+                    description="An unexpected error occurred. The incident has been recorded.",
+                    color=COLOR_DANGER,
+                )
+            )
+        except discord.HTTPException:
+            pass
+        _ = orig
 
 
 async def _respond_error(interaction: discord.Interaction, embed: discord.Embed) -> None:

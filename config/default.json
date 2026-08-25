@@ -16,7 +16,8 @@
     "on_duty": "1313115056078192640",
     "high_rank": "1240078945114656768",
     "middle_rank": "1240078945798586502",
-    "low_rank": "1240078946934980608"
+    "low_rank": "1240078946934980608",
+    "shift_certified": "1216488567447093378"
   },
   "rank_roles": {
     "Probationary Trooper": "1405224151769157743",
@@ -56,7 +57,7 @@
   ],
   "channels": {
     "promotions": "",
-    "loa": "",
+    "loa": "1313115564889079859",
     "quota": "",
     "shift_log": "",
     "notifications": "",
@@ -69,7 +70,9 @@
     "logs": ""
   },
   "quota": {
-    "weekly_minutes": 180,
+    "low_minutes": 90,
+    "middle_minutes": 75,
+    "high_minutes": 30,
     "reminder_hours_before_reset": 24,
     "approaching_percent": 50
   },
