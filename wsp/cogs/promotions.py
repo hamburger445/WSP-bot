@@ -29,9 +29,8 @@ class Promotions(commands.Cog):
         member: discord.Member,
         rank: str,
         reason: str,
-        authorizing_command: discord.Member,
     ) -> None:
-        await self._rank(interaction, member, rank, reason, authorizing_command, "promotion")
+        await self._rank(interaction, member, rank, reason, "promotion")
 
     @app_commands.command(name="demote", description="Demote a WSP member and update Discord roles.")
     @has_level(PermissionLevel.HR)
@@ -41,9 +40,8 @@ class Promotions(commands.Cog):
         member: discord.Member,
         rank: str,
         reason: str,
-        authorizing_command: discord.Member,
     ) -> None:
-        await self._rank(interaction, member, rank, reason, authorizing_command, "demotion")
+        await self._rank(interaction, member, rank, reason, "demotion")
 
     @app_commands.command(name="fire", description="Remove a member from WSP and strip department roles.")
     @has_level(PermissionLevel.HR)
@@ -52,13 +50,12 @@ class Promotions(commands.Cog):
         interaction: discord.Interaction,
         member: discord.Member,
         reason: str,
-        authorizing_command: discord.Member,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        message = await fire_member(self.bot, interaction.guild, member, reason, interaction.user, authorizing_command)
+        message = await fire_member(self.bot, interaction.guild, member, reason, interaction.user)
         await interaction.followup.send(embed=success_embed("Member fired", message), ephemeral=True)
 
     @promote.autocomplete("rank")
@@ -73,14 +70,13 @@ class Promotions(commands.Cog):
         member: discord.Member,
         rank: str,
         reason: str,
-        authorizing: discord.Member,
         action: str,
     ) -> None:
         if interaction.guild is None:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
         error = await change_rank(
-            self.bot, interaction.guild, member, rank, reason, interaction.user, authorizing, action
+            self.bot, interaction.guild, member, rank, reason, interaction.user, action
         )
         if error:
             await interaction.response.send_message(embed=error_embed("Invalid rank change", error), ephemeral=True)

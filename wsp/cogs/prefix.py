@@ -54,11 +54,10 @@ class Prefix(commands.Cog):
         ctx: commands.Context,
         member: discord.Member,
         rank: str,
-        authorizing: discord.Member,
         *,
         reason: str,
     ) -> None:
-        await self._rank(ctx, member, rank, reason, authorizing, "promotion")
+        await self._rank(ctx, member, rank, reason, "promotion")
 
     @commands.command(name="demote")
     @prefix_has_level(PermissionLevel.HR)
@@ -67,11 +66,10 @@ class Prefix(commands.Cog):
         ctx: commands.Context,
         member: discord.Member,
         rank: str,
-        authorizing: discord.Member,
         *,
         reason: str,
     ) -> None:
-        await self._rank(ctx, member, rank, reason, authorizing, "demotion")
+        await self._rank(ctx, member, rank, reason, "demotion")
 
     @commands.command(name="fire")
     @prefix_has_level(PermissionLevel.HR)
@@ -79,11 +77,10 @@ class Prefix(commands.Cog):
         self,
         ctx: commands.Context,
         member: discord.Member,
-        authorizing: discord.Member,
         *,
         reason: str,
     ) -> None:
-        message = await fire_member(self.bot, ctx.guild, member, reason, ctx.author, authorizing)  # type: ignore[arg-type]
+        message = await fire_member(self.bot, ctx.guild, member, reason, ctx.author)  # type: ignore[arg-type]
         await ctx.send(embed=success_embed("Member fired", message))
 
     async def _rank(
@@ -92,10 +89,9 @@ class Prefix(commands.Cog):
         member: discord.Member,
         rank: str,
         reason: str,
-        authorizing: discord.Member,
         action: str,
     ) -> None:
-        error = await change_rank(self.bot, ctx.guild, member, rank, reason, ctx.author, authorizing, action)  # type: ignore[arg-type]
+        error = await change_rank(self.bot, ctx.guild, member, rank, reason, ctx.author, action)  # type: ignore[arg-type]
         if error:
             await ctx.send(embed=error_embed("Invalid rank change", error))
             return

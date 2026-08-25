@@ -479,17 +479,17 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             await set_status(bot, g, member, "active", reason, actor)
             return f"{member} reinstated."
         if action == "promote":
-            err = await change_rank(bot, g, member, kwargs["rank"] or "", reason, actor, actor, "promotion")
+            err = await change_rank(bot, g, member, kwargs["rank"] or "", reason, actor, "promotion")
             if err:
                 raise ValueError(err)
             return f"{member} promoted to {kwargs['rank']}."
         if action == "demote":
-            err = await change_rank(bot, g, member, kwargs["rank"] or "", reason, actor, actor, "demotion")
+            err = await change_rank(bot, g, member, kwargs["rank"] or "", reason, actor, "demotion")
             if err:
                 raise ValueError(err)
             return f"{member} demoted to {kwargs['rank']}."
         if action == "fire":
-            return await fire_member(bot, g, member, reason, actor, actor)
+            return await fire_member(bot, g, member, reason, actor)
         if action == "end_shift":
             await end_active_shift(bot, g, member.id)
             return f"Active shift ended for {member}."

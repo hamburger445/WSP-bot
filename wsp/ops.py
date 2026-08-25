@@ -34,7 +34,6 @@ async def change_rank(
     rank: str,
     reason: str,
     actor: discord.abc.User,
-    authorizing: discord.abc.User,
     action: str,
 ) -> str | None:
     """Promote or demote. Returns an error message, or None on success."""
@@ -51,7 +50,7 @@ async def change_rank(
         return f"{member.display_name} is already at or below **{rank}**."
     await bot.db.update_personnel(record["id"], rank_id=new_rank["id"])
     await bot.db.add_rank_history(
-        record["id"], action, from_rank, rank, reason, str(authorizing.id), str(actor.id)
+        record["id"], action, from_rank, rank, reason, str(actor.id), str(actor.id)
     )
     cfg = await bot.guild_config(guild.id)
     await sync_rank_roles(member, rank, cfg)
@@ -62,7 +61,7 @@ async def change_rank(
         actor_name=str(actor),
         target_id=member.id,
         target_name=str(member),
-        details=f"{from_rank} → {rank} | auth {authorizing} | {reason}",
+        details=f"{from_rank} → {rank} | {reason}",
     )
     await bot.db.log_activity(guild.id, member.id, action, f"{from_rank} → {rank}")
     color = COLOR_GOLD if action == "promotion" else COLOR_NAVY
@@ -73,7 +72,6 @@ async def change_rank(
         [
             ("Reason", reason, False),
             ("Processed by", actor.mention, True),
-            ("Authorized by", authorizing.mention, True),
         ],
     )
     dm = base_embed(title, f"Your rank is now **{rank}**.\n{from_rank or 'Unassigned'} → **{rank}**", color=color)
@@ -91,14 +89,13 @@ async def fire_member(
     member: discord.Member,
     reason: str,
     actor: discord.abc.User,
-    authorizing: discord.abc.User,
 ) -> str:
     record = await ensure_personnel(bot, member)
     from_rank = record["rank_name"]
     await end_active_shift(bot, guild, member.id)
     await bot.db.update_personnel(record["id"], status="removed")
     await bot.db.add_rank_history(
-        record["id"], "termination", from_rank, None, reason, str(authorizing.id), str(actor.id)
+        record["id"], "termination", from_rank, None, reason, str(actor.id), str(actor.id)
     )
     cfg = await bot.guild_config(guild.id)
     stripped = await strip_managed_roles(member, cfg, reason=f"WSP fire: {reason}"[:80])
@@ -120,7 +117,6 @@ async def fire_member(
             ("Roles removed", str(stripped), True),
             ("Reason", reason, False),
             ("Processed by", actor.mention, True),
-            ("Authorized by", authorizing.mention, True),
         ],
     )
     dm = base_embed(
