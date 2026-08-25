@@ -14,6 +14,7 @@ from wsp.config import GuildConfig, Settings
 from wsp.constants import COLOR_DANGER, FOOTER
 from wsp.db import Database
 from wsp.permissions import InsufficientPermission
+from wsp.utils import member_from_id, sync_duty_role
 
 log = logging.getLogger("wsp.bot")
 
@@ -124,6 +125,10 @@ class WSPBot(commands.Bot):
             if cfg.apply_published_structure():
                 await self.save_config(guild.id, cfg)
             await self.db.ensure_ranks(guild.id, cfg)
+            for row in await self.db.list_active_shifts(guild.id):
+                member = await member_from_id(self, guild, int(row["discord_id"]))
+                if member:
+                    await sync_duty_role(member, cfg, row["status"] == "active")
         if not self._synced:
             try:
                 await self.sync_app_commands()
