@@ -30,6 +30,7 @@ MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
     ]),
     ("Help", "Command directory", [
         "`/help` or `?help` — this directory. Prefix commands use `?`.",
+        "`/ping` or `?ping` — bot latency.",
     ]),
 ]
 
@@ -61,6 +62,12 @@ class Help(commands.Cog):
             view=HelpView(staff),
             ephemeral=True,
         )
+
+
+    @app_commands.command(name="ping", description="Check bot latency.")
+    async def ping(self, interaction: discord.Interaction) -> None:
+        ms = round(self.bot.latency * 1000)
+        await interaction.response.send_message(f"Pong — **{ms} ms**")
 
 
 async def _is_staff(interaction: discord.Interaction) -> bool:

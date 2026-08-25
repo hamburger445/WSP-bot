@@ -41,6 +41,11 @@ class Prefix(commands.Cog):
         staff = await resolve_user_level(self.bot, ctx.guild.id, ctx.author) >= PermissionLevel.SUPERVISOR  # type: ignore[union-attr]
         await ctx.send(embed=_catalog_embed("members", staff), view=HelpView(staff))
 
+    @commands.command(name="ping")
+    async def ping_cmd(self, ctx: commands.Context) -> None:
+        ms = round(self.bot.latency * 1000)
+        await ctx.send(f"Pong — **{ms} ms**")
+
     @commands.command(name="dashboard")
     @prefix_has_level(PermissionLevel.HR)
     async def dashboard_cmd(self, ctx: commands.Context) -> None:
