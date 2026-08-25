@@ -30,10 +30,10 @@ class Shifts(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    shift = app_commands.Group(name="shift", description="Duty shift management")
-    admin = app_commands.Group(name="admin", description="Start, end, edit, or delete a member's shifts.", parent=shift)
+    shift = app_commands.Group(name="shift", description="Duty shifts")
+    admin = app_commands.Group(name="admin", description="Manage a member's shifts.", parent=shift)
 
-    @shift.command(name="menu", description="Post public start, pause, resume, and end buttons.")
+    @shift.command(name="menu", description="Start, pause, resume, or end your shift.")
     async def menu(self, interaction: discord.Interaction) -> None:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
@@ -47,7 +47,7 @@ class Shifts(commands.Cog):
             view=ShiftActionView(status, can_start=member_can_start_shift(interaction.user, cfg)),
         )
 
-    @shift.command(name="data", description="Post the public duty board and leaderboard.")
+    @shift.command(name="data", description="Show who is on duty.")
     async def data(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
@@ -55,7 +55,7 @@ class Shifts(commands.Cog):
         embed = await build_duty_board(self.bot, interaction.guild)
         await interaction.response.send_message(embed=embed, view=ShiftMenuView())
 
-    @shift.command(name="status", description="Show who is currently on duty.")
+    @shift.command(name="status", description="Show who is on duty.")
     async def status(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             return
@@ -73,14 +73,14 @@ class Shifts(commands.Cog):
             embed.description = "\n".join(lines)[:4000]
         await interaction.response.send_message(embed=embed)
 
-    @shift.command(name="leaderboard", description="Duty time leaderboard.")
+    @shift.command(name="leaderboard", description="Show duty time standings.")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             return
         embed = await build_leaderboard(self.bot, interaction.guild)
         await interaction.response.send_message(embed=embed)
 
-    @shift.command(name="history", description="View shift history for a member.")
+    @shift.command(name="history", description="View shift history.")
     async def history(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if not interaction.guild:
             return
@@ -103,7 +103,7 @@ class Shifts(commands.Cog):
         ) or "No records."
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @admin.command(name="start", description="Start a duty shift for a member.")
+    @admin.command(name="start", description="Start a member's shift.")
     @has_level(PermissionLevel.SUPERVISOR)
     async def admin_start(self, interaction: discord.Interaction, member: discord.Member) -> None:
         if not interaction.guild:
@@ -112,7 +112,7 @@ class Shifts(commands.Cog):
         result = await begin_shift(self.bot, interaction.guild, member, interaction.user)
         await _admin_reply(interaction, result)
 
-    @admin.command(name="end", description="End a member's active shift.")
+    @admin.command(name="end", description="End a member's shift.")
     @has_level(PermissionLevel.SUPERVISOR)
     async def admin_end(self, interaction: discord.Interaction, member: discord.Member) -> None:
         if not interaction.guild:
@@ -121,14 +121,14 @@ class Shifts(commands.Cog):
         result = await complete_shift(self.bot, interaction.guild, member, interaction.user)
         await _admin_reply(interaction, result)
 
-    @admin.command(name="edit", description="Set a shift duration in hours, minutes, and seconds.")
+    @admin.command(name="edit", description="Change a shift's duration.")
     @has_level(PermissionLevel.SUPERVISOR)
     @app_commands.describe(
-        member="Member who owns the shift",
-        shift_id="Shift ID from history",
-        hours="Hours on duty",
-        minutes="Minutes on duty",
-        seconds="Seconds on duty",
+        member="Member",
+        shift_id="Shift ID",
+        hours="Hours",
+        minutes="Minutes",
+        seconds="Seconds",
     )
     async def admin_edit(
         self,
@@ -185,7 +185,7 @@ class Shifts(commands.Cog):
             base_embed("Shift edited", f"{interaction.user.mention} set {member.mention} shift `#{shift_id}` to **{format_duration(duration)}**."),
         )
 
-    @admin.command(name="delete", description="Delete a shift record for a member.")
+    @admin.command(name="delete", description="Delete a shift.")
     @has_level(PermissionLevel.SUPERVISOR)
     async def admin_delete(self, interaction: discord.Interaction, member: discord.Member, shift_id: int) -> None:
         if not interaction.guild:

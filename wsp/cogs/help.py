@@ -17,35 +17,41 @@ if TYPE_CHECKING:
 
 MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
     ("Duty", "Shifts and quota", [
-        "`/shift menu` or `?shift menu` — start, pause, resume, and end",
-        "`/shift data` `?shift data` — duty board and leaderboard",
-        "`/shift status` `/shift leaderboard` `/shift history`",
-        "`/quota view` `/quota leaderboard`",
-        "Only certified patrol can start a shift.",
+        "`/shift menu` — start, pause, resume, or end your shift",
+        "`/shift data` — duty board",
+        "`/shift status` — who is on duty",
+        "`/shift leaderboard` — duty standings",
+        "`/shift history` — shift history",
+        "`/quota view` — view quota",
+        "`/quota leaderboard` — quota standings",
     ]),
     ("Leave", "Time away from duty", [
-        "`/loa menu` or `?loa menu` — how to request leave",
-        "`/loa request` — dates as `YYYY-MM-DD` (example: `2026-09-01`)",
-        "HR accepts or denies requests in the LOA channel.",
+        "`/loa menu` — leave menu",
+        "`/loa request` — request leave",
     ]),
-    ("Help", "Command directory", [
-        "`/help` or `?help` — this directory. Prefix commands use `?`.",
-        "`/ping` or `?ping` — bot latency.",
+    ("Help", "Commands", [
+        "`/help` — command list",
+        "`/ping` — ping",
     ]),
 ]
 
 STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
-    ("Rank", "High Rank and dashboard", [
-        "`/promote` `/demote` `/fire` — HR only (also on the website)",
-        "`/shift admin start` `end` `edit` `delete` — Middle Rank and above",
-        "`/quota admin`",
+    ("Rank", "Promotions", [
+        "`/promote` — promote a member",
+        "`/demote` — demote a member",
+        "`/fire` — fire a member",
+        "`/shift admin` — start, end, edit, or delete a shift",
+        "`/quota admin` — change quota settings",
     ]),
-    ("HR", "Leave and command", [
-        "`/loa active` — HR only",
-        "`/dashboard` — includes **Reset shift data**",
+    ("Command", "Overview", [
+        "`/loa active` — members on leave",
+        "`/dashboard` — dashboard",
     ]),
-    ("Setup", "Owner only", [
-        "`/setupserver` `/verifysetup` `/config` `/sync`",
+    ("Setup", "Server", [
+        "`/setupserver` — set up the server",
+        "`/verifysetup` — check setup",
+        "`/config` — settings",
+        "`/sync` — update commands",
     ]),
 ]
 
@@ -54,7 +60,7 @@ class Help(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="help", description="How to use WSP commands.")
+    @app_commands.command(name="help", description="Show available commands.")
     async def help(self, interaction: discord.Interaction) -> None:
         staff = await _is_staff(interaction)
         await interaction.response.send_message(
@@ -64,7 +70,7 @@ class Help(commands.Cog):
         )
 
 
-    @app_commands.command(name="ping", description="Check bot latency.")
+    @app_commands.command(name="ping", description="Check latency.")
     async def ping(self, interaction: discord.Interaction) -> None:
         ms = round(self.bot.latency * 1000)
         await interaction.response.send_message(f"Pong — **{ms} ms**")
@@ -75,17 +81,8 @@ async def _is_staff(interaction: discord.Interaction) -> bool:
 
 
 def _catalog_embed(section: str, staff: bool) -> discord.Embed:
-    if staff:
-        intro = (
-            "Slash commands start with **/**. The same names also work with **?**, "
-            "for example `?shift menu` and `/shift menu`."
-        )
-    else:
-        intro = (
-            "Type **/** or **?** then a command name. "
-            "Grouped commands appear as `/shift` or `?shift` — pick the group, then the action."
-        )
-    embed = base_embed("WSP command directory", intro, color=COLOR_NAVY)
+    intro = "Available commands."
+    embed = base_embed("Commands", intro, color=COLOR_NAVY)
     rows = _rows_for(section, staff)
     for title, subtitle, lines in rows:
         embed.add_field(name=f"{title}  ·  {subtitle}", value="\n".join(lines), inline=False)
@@ -115,9 +112,9 @@ class HelpView(discord.ui.View):
 class HelpSelect(discord.ui.Select):
     def __init__(self, staff: bool) -> None:
         self.staff = staff
-        options = [discord.SelectOption(label="How to use the bot", value="members")]
+        options = [discord.SelectOption(label="Commands", value="members")]
         if staff:
-            options.append(discord.SelectOption(label="Staff tools", value="staff"))
+            options.append(discord.SelectOption(label="Staff commands", value="staff"))
             options.append(discord.SelectOption(label="All commands", value="all"))
         options.extend(
             discord.SelectOption(label=title, value=title, description=subtitle)

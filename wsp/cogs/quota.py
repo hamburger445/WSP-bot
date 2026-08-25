@@ -41,7 +41,7 @@ class Quota(commands.Cog):
 
     quota = app_commands.Group(name="quota", description="Weekly quota")
 
-    @quota.command(name="view", description="View this week's quota for yourself or another member.")
+    @quota.command(name="view", description="View quota.")
     async def view(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if not interaction.guild:
             return
@@ -69,10 +69,10 @@ class Quota(commands.Cog):
                 ("Duty status", "Exempt (LOA)" if loa else (duty["status"] if duty and duty["status"] else _status(duty_min, required)), True),
             ],
         )
-        embed.set_footer(text="Quota resets every Monday 00:00 in the department timezone. Missed quota is reported to HR — not auto-punished.")
+        embed.set_footer(text="Quota resets every Monday.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @quota.command(name="leaderboard", description="This week's quota completion board.")
+    @quota.command(name="leaderboard", description="Show quota standings.")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             return
@@ -91,8 +91,14 @@ class Quota(commands.Cog):
             )
         await interaction.response.send_message(embed=embed)
 
-    @quota.command(name="admin", description="Adjust quota settings or grant a one-week exemption.")
+    @quota.command(name="admin", description="Change quota settings.")
     @has_level(PermissionLevel.HR)
+    @app_commands.describe(
+        low_minutes="Low Rank minutes",
+        middle_minutes="Middle Rank minutes",
+        high_minutes="High Rank minutes",
+        exempt_member="Member to exempt",
+    )
     async def admin(
         self,
         interaction: discord.Interaction,

@@ -95,7 +95,7 @@ class Setup(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="setupserver", description="Set role and channel IDs one question at a time.")
+    @app_commands.command(name="setupserver", description="Set role and channel IDs.")
     @is_owner()
     async def setupserver(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
@@ -108,7 +108,7 @@ class Setup(commands.Cog):
         step = _first_missing_step(cfg)
         await _show_step(self.bot, interaction, step, edit=False)
 
-    @app_commands.command(name="verifysetup", description="Check that required role and channel IDs are set and exist.")
+    @app_commands.command(name="verifysetup", description="Check setup.")
     @is_owner()
     async def verifysetup(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
@@ -142,9 +142,8 @@ class Setup(commands.Cog):
         required_tables = ["personnel", "shifts", "audit_log", "loa_requests"]
         missing_tables = [t for t in required_tables if t not in table_names]
         ok = not missing_cfg and not missing_discord and not missing_tables
-        embed = success_embed("Setup verification", "All required IDs are set and exist.") if ok else warning_embed(
+        embed = success_embed("Setup verification", "Setup is complete.") if ok else warning_embed(
             "Setup incomplete",
-            "Run `/setupserver` to set missing IDs one at a time.",
         )
         add_fields(
             embed,
@@ -157,16 +156,16 @@ class Setup(commands.Cog):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="config", description="View or update department configuration keys.")
+    @app_commands.command(name="config", description="View or change settings.")
     @is_owner()
-    @app_commands.describe(path="Dot path such as quota.weekly_minutes", value="New value (omit to view)")
+    @app_commands.describe(path="Setting name", value="New value")
     async def config(self, interaction: discord.Interaction, path: str | None = None, value: str | None = None) -> None:
         if interaction.guild is None:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
         cfg = await self.bot.guild_config(interaction.guild.id)
         if not path:
-            embed = base_embed("Department configuration", "Current IDs. Run `/setupserver` to change them one at a time.")
+            embed = base_embed("Department configuration", "Current settings.")
             roles = cfg.get("roles") or {}
             channels = cfg.get("channels") or {}
             embed.add_field(name="Roles", value="\n".join(f"`{k}` → `{v or 'unset'}`" for k, v in roles.items()) or "—", inline=True)
@@ -191,7 +190,7 @@ class Setup(commands.Cog):
         if keys[0] in {"roles", "channels", "categories", "rank_roles", "guild_id"}:
             parsed_id = parse_snowflake(value)
             if not parsed_id:
-                await interaction.response.send_message(embed=error_embed("Invalid ID", "Paste a Discord snowflake ID."), ephemeral=True)
+                await interaction.response.send_message(embed=error_embed("Invalid ID"), ephemeral=True)
                 return
             cfg.set_path(keys, str(parsed_id))
             display = str(parsed_id)
@@ -209,7 +208,7 @@ class Setup(commands.Cog):
         )
         await interaction.response.send_message(embed=success_embed("Configuration updated", f"`{path}` set to `{display}`."), ephemeral=True)
 
-    @app_commands.command(name="sync", description="Re-sync slash commands to this guild (owner).")
+    @app_commands.command(name="sync", description="Sync commands.")
     @is_owner()
     async def sync(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -245,11 +244,11 @@ async def _step_embed(guild: discord.Guild, cfg, step_index: int) -> discord.Emb
     kind_label = {"role": "role ID", "rank": "role ID", "channel": "channel ID", "category": "category ID"}[step.kind]
     embed = base_embed(
         f"Setup  •  {step_index + 1} of {len(WIZARD_STEPS)}",
-        f"**{step.question}**\n\nPaste the Discord {kind_label}, then press **Enter ID**.",
+        f"**{step.question}**\n\nEnter the {kind_label}, then press **Enter ID**.",
         color=COLOR_NAVY,
     )
     embed.add_field(name="Currently", value=current, inline=False)
-    embed.set_footer(text="Skip keeps what is already set. Nothing is created — IDs only.")
+    embed.set_footer(text="Skip keeps the current value.")
     return embed
 
 
@@ -323,7 +322,7 @@ class SetupIdModal(discord.ui.Modal, title="Enter Discord ID"):
         snowflake = parse_snowflake(str(self.snowflake.value))
         if not snowflake:
             await interaction.response.send_message(
-                embed=error_embed("Invalid ID", "Paste a Discord snowflake ID, mention, or copied ID."),
+                embed=error_embed("Invalid ID"),
                 ephemeral=True,
             )
             return

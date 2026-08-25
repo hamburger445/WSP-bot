@@ -109,7 +109,7 @@ class Prefix(commands.Cog):
             embed=base_embed(
                 "Shift",
                 "`?shift menu` `data` `status` `leaderboard` `history`\n"
-                "Middle Rank: `?shift admin start|end|edit|delete`",
+                "`?shift admin start` `end` `edit` `delete`",
             )
         )
 
@@ -324,10 +324,7 @@ class Prefix(commands.Cog):
     async def loa_menu(self, ctx: commands.Context) -> None:
         from wsp.cogs.loa import LOAMenuView
 
-        embed = base_embed(
-            "Leave of Absence",
-            "Use **Submit request** below, or `?loa request YYYY-MM-DD YYYY-MM-DD reason`.",
-        )
+        embed = base_embed("Leave of Absence", "Submit a leave request or view your requests.")
         await ctx.send(embed=embed, view=LOAMenuView())
 
     @loa_grp.command(name="request")
@@ -358,17 +355,17 @@ class Prefix(commands.Cog):
     @commands.command(name="setupserver")
     @prefix_is_owner()
     async def setupserver_cmd(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("Setup", "Use `/setupserver` — the ID wizard needs slash buttons."))
+        await ctx.send(embed=base_embed("Setup", "Set up the server with `/setupserver`."))
 
     @commands.command(name="verifysetup")
     @prefix_is_owner()
     async def verifysetup_cmd(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("Verify setup", "Use `/verifysetup` for the full ID check."))
+        await ctx.send(embed=base_embed("Verify setup", "Check setup with `/verifysetup`."))
 
     @commands.command(name="config")
     @prefix_is_owner()
     async def config_cmd(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("Config", "Use `/config` to view or change IDs."))
+        await ctx.send(embed=base_embed("Config", "View or change settings with `/config`."))
 
     @commands.command(name="sync")
     @prefix_is_owner()

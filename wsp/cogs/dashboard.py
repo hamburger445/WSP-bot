@@ -22,7 +22,7 @@ class Dashboard(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="dashboard", description="Open the WSP command dashboard. Reset shift data from here.")
+    @app_commands.command(name="dashboard", description="Open the command dashboard.")
     @has_level(PermissionLevel.HR)
     async def dashboard(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
@@ -51,7 +51,7 @@ async def overview_embed(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
             ("Quota complete (week)", f"{complete}/{len(duty) or 0}", True),
         ],
     )
-    embed.set_footer(text="Use Reset shift data to clear the duty board and leaderboard.")
+    embed.set_footer(text="Reset shift data.")
     return embed
 
 

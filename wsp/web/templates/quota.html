@@ -3,7 +3,7 @@
 {% block heading %}Weekly quota{% endblock %}
 {% block content %}
 <section class="panel">
-  <p class="meta">Resets Monday 00:00 in the department timezone. Missed quota notifies HR — it does not auto-punish.</p>
+  <p class="meta">Quota resets every Monday.</p>
   <form class="form-inline" method="post" action="/actions">
     <input type="hidden" name="next" value="/quota">
     <input type="hidden" name="action" value="quota_set">

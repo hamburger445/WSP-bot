@@ -23,9 +23,15 @@ class LOA(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    loa = app_commands.Group(name="loa", description="Leave of Absence")
+    loa = app_commands.Group(name="loa", description="Leave of absence")
 
-    @loa.command(name="request", description="Submit a leave request. Dates: YYYY-MM-DD.")
+    @loa.command(name="request", description="Request leave.")
+    @app_commands.describe(
+        start_date="Start date",
+        end_date="End date",
+        reason="Reason",
+        additional_information="More information",
+    )
     async def request(
         self,
         interaction: discord.Interaction,
@@ -48,7 +54,7 @@ class LOA(commands.Cog):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @loa.command(name="active", description="List personnel currently on approved LOA.")
+    @loa.command(name="active", description="List members on leave.")
     @has_level(PermissionLevel.HR)
     async def active(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
@@ -63,16 +69,9 @@ class LOA(commands.Cog):
         ) or "No members are currently on approved leave."
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @loa.command(name="menu", description="Open the Leave of Absence menu.")
+    @loa.command(name="menu", description="Open the leave menu.")
     async def loa_menu(self, interaction: discord.Interaction) -> None:
-        embed = base_embed(
-            "Leave of Absence",
-            "Need time away from duty? Use **Submit request** below, or `/loa request`.\n\n"
-            "Dates must be `YYYY-MM-DD` (example: `2026-09-01`). Include a reason.\n"
-            "Approved leave covers you for weekly quota during those dates.\n"
-            "HR reviews requests with Accept / Deny in the LOA channel.\n"
-            "Use **My requests** to check status.",
-        )
+        embed = base_embed("Leave of Absence", "Submit a leave request or view your requests.")
         await interaction.response.send_message(embed=embed, view=LOAMenuView(), ephemeral=True)
 
 
@@ -93,7 +92,7 @@ async def create_loa_request(
         return False, error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`. End must be after start.")
     max_days = int(cfg.get("loa", "max_days") or 30)
     if end - start > max_days * 86400:
-        return False, error_embed("Too long", f"LOA may not exceed {max_days} days. Contact HR for exceptions.")
+        return False, error_embed("Too long", f"Leave may not exceed {max_days} days.")
     await ensure_personnel(bot, member)
     loa_id = await bot.db.create_loa(guild.id, member.id, start, end, reason, additional_information)
     await bot.db.audit(
@@ -112,8 +111,8 @@ async def create_loa_request(
     )
     posted = await _post_loa_review(bot, guild, public, LOADecisionView(loa_id))
     if not posted:
-        return False, error_embed("Could not post request", "The LOA review channel is missing or I cannot send there.")
-    return True, success_embed("Request submitted", f"LOA `#{loa_id}` is on file. You will be notified when a decision is made.")
+        return False, error_embed("Could not submit request")
+    return True, success_embed("Request submitted")
 
 
 class LOAMenuView(discord.ui.View):

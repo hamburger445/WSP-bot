@@ -83,18 +83,18 @@ class ShiftActionView(discord.ui.View):
 
 async def build_shift_controls(status: str | None = None) -> discord.Embed:
     if status == "paused":
-        body = "Your shift is paused. **Resume** and **End** are available. Start stays off until you end."
+        body = "Your shift is paused."
     elif status == "active":
-        body = "You are on duty. **Pause** and **End** are available. Start stays off until you end."
+        body = "You are on duty."
     else:
-        body = "You are off duty. Use **Start shift**. Pause and End stay off until you are on duty."
+        body = "You are off duty."
     return base_embed("Shift controls", body, color=COLOR_NAVY)
 
 
 async def build_duty_board(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
     embed = base_embed(
         "Duty board",
-        "Who is on duty and the all-time leaderboard. Shift buttons are on `/shift menu`.",
+        "Who is on duty.",
         color=COLOR_NAVY,
     )
     active = await bot.db.list_active_shifts(guild.id)
@@ -140,13 +140,13 @@ async def build_leaderboard(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
 
 async def build_personal_shift(bot: WSPBot, guild: discord.Guild, user: discord.abc.User, row) -> discord.Embed:
     if row is None:
-        embed = base_embed("Your shift", "You are off duty. Start when you go on patrol.", color=COLOR_NAVY)
+        embed = base_embed("Your shift", "You are off duty.", color=COLOR_NAVY)
         embed.add_field(name="Status", value="Off duty", inline=True)
         return embed
     elapsed = format_duration(current_shift_seconds(row))
     embed = base_embed(
         "Your shift",
-        f"You are **{row['status']}**. Pause and end are available while you are on duty.",
+        f"You are **{row['status']}**.",
         color=COLOR_NAVY,
     )
     add_fields(
@@ -399,7 +399,7 @@ async def _history(interaction: discord.Interaction) -> None:
         return
     rows = await bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=8)
     totals = await bot.db.shift_totals(interaction.guild.id, interaction.user.id)
-    embed = base_embed("Shift history", "Your recent duty logs.")
+    embed = base_embed("Shift history")
     if totals:
         embed.add_field(name="All-time duty", value=format_duration(totals["total_seconds"]), inline=True)
         embed.add_field(name="Completed shifts", value=str(totals["shift_count"]), inline=True)
