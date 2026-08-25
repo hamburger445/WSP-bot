@@ -52,7 +52,7 @@ class Promotions(commands.Cog):
         self,
         interaction: discord.Interaction,
         member: discord.Member,
-        reason: str,
+        reason: str | None = None,
     ) -> None:
         if not interaction.guild:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)

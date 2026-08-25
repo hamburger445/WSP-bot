@@ -31,7 +31,7 @@
           {% for r in ranks %}<option value="{{ r.name }}" {% if r.name == record.rank_name %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
         </select>
       </label>
-      <label class="field">Reason <input name="reason" required></label>
+      <label class="field">Reason <input name="reason"></label>
       <button class="gold-btn" type="submit">Apply</button>
     </form>
     <form class="form-grid" method="post" action="/actions">

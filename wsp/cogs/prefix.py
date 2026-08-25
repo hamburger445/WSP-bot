@@ -83,7 +83,7 @@ class Prefix(commands.Cog):
         ctx: commands.Context,
         member: discord.Member,
         *,
-        reason: str,
+        reason: str = "",
     ) -> None:
         message = await fire_member(self.bot, ctx.guild, member, reason, ctx.author)  # type: ignore[arg-type]
         await ctx.send(embed=success_embed("Member fired", message))

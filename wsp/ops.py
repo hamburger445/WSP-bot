@@ -87,18 +87,20 @@ async def fire_member(
     bot: WSPBot,
     guild: discord.Guild,
     member: discord.Member,
-    reason: str,
+    reason: str | None,
     actor: discord.abc.User,
 ) -> str:
+    note = (reason or "").strip()
     record = await ensure_personnel(bot, member)
     from_rank = record["rank_name"]
     await end_active_shift(bot, guild, member.id)
     await bot.db.update_personnel(record["id"], status="removed")
     await bot.db.add_rank_history(
-        record["id"], "termination", from_rank, None, reason, str(actor.id), str(actor.id)
+        record["id"], "termination", from_rank, None, note, str(actor.id), str(actor.id)
     )
     cfg = await bot.guild_config(guild.id)
-    stripped = await strip_managed_roles(member, cfg, reason=f"WSP fire: {reason}"[:80])
+    audit_reason = f"WSP fire: {note}"[:80] if note else "WSP fire"
+    stripped = await strip_managed_roles(member, cfg, reason=audit_reason)
     await bot.db.audit(
         guild.id,
         "personnel_fire",
@@ -106,25 +108,25 @@ async def fire_member(
         actor_name=str(actor),
         target_id=member.id,
         target_name=str(member),
-        details=reason,
+        details=note or None,
     )
-    await bot.db.log_activity(guild.id, member.id, "termination", reason)
+    await bot.db.log_activity(guild.id, member.id, "termination", note)
     public = base_embed("Terminated", f"{member.mention} has been removed from Wisconsin State Patrol.", color=COLOR_DANGER)
-    add_fields(
-        public,
-        [
-            ("Previous rank", from_rank or "Unassigned", True),
-            ("Roles removed", str(stripped), True),
-            ("Reason", reason, False),
-            ("Processed by", actor.mention, True),
-        ],
-    )
+    fields: list[tuple[str, object, bool]] = [
+        ("Previous rank", from_rank or "Unassigned", True),
+        ("Roles removed", str(stripped), True),
+    ]
+    if note:
+        fields.append(("Reason", note, False))
+    fields.append(("Processed by", actor.mention, True))
+    add_fields(public, fields)
     dm = base_embed(
         "Removed from WSP",
         "Your Wisconsin State Patrol roles have been removed.",
         color=COLOR_DANGER,
     )
-    dm.add_field(name="Reason", value=reason, inline=False)
+    if note:
+        dm.add_field(name="Reason", value=note, inline=False)
     await bot.try_dm(member, dm)
     await bot.notify(guild, "command_log", public)
     await bot.notify(guild, "notifications", public)
