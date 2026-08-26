@@ -318,7 +318,7 @@ class Prefix(commands.Cog):
 
     @commands.group(name="loa", invoke_without_command=True)
     async def loa_grp(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("LOA", "`?loa menu` `request` `active`"))
+        await ctx.send(embed=base_embed("LOA", "`?loa menu` `request` `active` `admin`"))
 
     @loa_grp.command(name="menu")
     async def loa_menu(self, ctx: commands.Context) -> None:
@@ -350,6 +350,66 @@ class Prefix(commands.Cog):
             f"{mention_or_id(ctx.guild, r['discord_id'])} • {ts(r['start_date'])} → {ts(r['end_date'])} — {r['reason']}"
             for r in current
         ) or "No members are currently on approved leave."
+        await ctx.send(embed=embed)
+
+    @loa_grp.group(name="admin", invoke_without_command=True)
+    @prefix_has_level(PermissionLevel.HR)
+    async def loa_admin(self, ctx: commands.Context) -> None:
+        await ctx.send(
+            embed=base_embed(
+                "Leave admin",
+                "`?loa admin start @member YYYY-MM-DD YYYY-MM-DD [reason]`\n"
+                "`?loa admin end @member`\n"
+                "`?loa admin edit @member YYYY-MM-DD YYYY-MM-DD [reason]`",
+            )
+        )
+
+    @loa_admin.command(name="start")
+    @prefix_has_level(PermissionLevel.HR)
+    async def loa_admin_start(
+        self,
+        ctx: commands.Context,
+        member: discord.Member,
+        start_date: str,
+        end_date: str,
+        *,
+        reason: str = "",
+    ) -> None:
+        from wsp.cogs.loa import start_member_loa
+
+        embed = await start_member_loa(self.bot, ctx.guild, member, start_date, end_date, reason, ctx.author)  # type: ignore[arg-type]
+        await ctx.send(embed=embed)
+
+    @loa_admin.command(name="end")
+    @prefix_has_level(PermissionLevel.HR)
+    async def loa_admin_end(self, ctx: commands.Context, member: discord.Member) -> None:
+        from wsp.cogs.loa import end_member_loa
+
+        embed = await end_member_loa(self.bot, ctx.guild, member, ctx.author)  # type: ignore[arg-type]
+        await ctx.send(embed=embed)
+
+    @loa_admin.command(name="edit")
+    @prefix_has_level(PermissionLevel.HR)
+    async def loa_admin_edit(
+        self,
+        ctx: commands.Context,
+        member: discord.Member,
+        start_date: str,
+        end_date: str,
+        *,
+        reason: str = "",
+    ) -> None:
+        from wsp.cogs.loa import edit_member_loa
+
+        embed = await edit_member_loa(
+            self.bot,
+            ctx.guild,  # type: ignore[arg-type]
+            member,
+            ctx.author,
+            start_date=start_date,
+            end_date=end_date,
+            reason=reason or None,
+        )
         await ctx.send(embed=embed)
 
     @commands.command(name="setupserver")

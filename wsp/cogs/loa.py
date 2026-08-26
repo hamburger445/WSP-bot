@@ -24,6 +24,7 @@ class LOA(commands.Cog):
         self.bot = bot
 
     loa = app_commands.Group(name="loa", description="Leave of absence")
+    admin = app_commands.Group(name="admin", description="Manage a member's leave.", parent=loa)
 
     @loa.command(name="request", description="Request leave.")
     @app_commands.describe(
@@ -74,6 +75,73 @@ class LOA(commands.Cog):
         embed = base_embed("Leave of Absence", "Submit a leave request or view your requests.")
         await interaction.response.send_message(embed=embed, view=LOAMenuView(), ephemeral=True)
 
+    @admin.command(name="start", description="Start a member's leave.")
+    @has_level(PermissionLevel.HR)
+    @app_commands.describe(
+        member="Member",
+        start_date="Start date",
+        end_date="End date",
+        reason="Reason",
+    )
+    async def admin_start(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        start_date: str,
+        end_date: str,
+        reason: str | None = None,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        embed = await start_member_loa(
+            self.bot, interaction.guild, member, start_date, end_date, reason, interaction.user
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @admin.command(name="end", description="End a member's leave.")
+    @has_level(PermissionLevel.HR)
+    @app_commands.describe(member="Member")
+    async def admin_end(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        embed = await end_member_loa(self.bot, interaction.guild, member, interaction.user)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @admin.command(name="edit", description="Change a member's leave.")
+    @has_level(PermissionLevel.HR)
+    @app_commands.describe(
+        member="Member",
+        start_date="Start date",
+        end_date="End date",
+        reason="Reason",
+        loa_id="Leave ID",
+    )
+    async def admin_edit(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        reason: str | None = None,
+        loa_id: int | None = None,
+    ) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        embed = await edit_member_loa(
+            self.bot,
+            interaction.guild,
+            member,
+            interaction.user,
+            start_date=start_date,
+            end_date=end_date,
+            reason=reason,
+            loa_id=loa_id,
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 async def create_loa_request(
     bot: WSPBot,
@@ -113,6 +181,251 @@ async def create_loa_request(
     if not posted:
         return False, error_embed("Could not submit request")
     return True, success_embed("Request submitted")
+
+
+async def start_member_loa(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.Member,
+    start_date: str,
+    end_date: str,
+    reason: str | None,
+    actor: discord.abc.User,
+) -> discord.Embed:
+    parsed = await _parse_loa_range(bot, guild, start_date, end_date)
+    if isinstance(parsed, discord.Embed):
+        return parsed
+    start, end = parsed
+    existing = await bot.db.active_loa(guild.id, member.id)
+    if existing:
+        return error_embed("Already on leave", f"{member.mention} is already on leave `#{existing['id']}`.")
+    overlap = await _overlapping_approved(bot, guild.id, member.id, start, end)
+    if overlap:
+        return error_embed("Leave already scheduled", f"{member.mention} already has leave `#{overlap['id']}`.")
+    for pending in await bot.db.list_member_loa(guild.id, member.id):
+        if pending["status"] != "pending":
+            continue
+        if int(pending["start_date"]) < end and int(pending["end_date"]) > start:
+            await bot.db.update_loa(pending["id"], status="denied", review_note="Replaced by started leave")
+    await ensure_personnel(bot, member)
+    note = (reason or "").strip() or "Leave"
+    loa_id = await bot.db.create_loa(
+        guild.id,
+        member.id,
+        start,
+        end,
+        note,
+        None,
+        status="approved",
+        reviewer_id=str(actor.id),
+    )
+    await _sync_personnel_leave(bot, guild, member.id)
+    await bot.db.audit(
+        guild.id,
+        "loa_start",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=member.id,
+        target_name=str(member),
+        details=f"#{loa_id} {start_date} → {end_date}",
+    )
+    embed = success_embed("Leave started", f"{member.mention}  •  `#{loa_id}`")
+    add_fields(embed, [("Start", ts(start), True), ("End", ts(end), True), ("Reason", note, False)])
+    await _announce_loa(bot, guild, embed, member, f"You are on leave.\n{ts(start)} → {ts(end)}")
+    return embed
+
+
+async def end_member_loa(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.Member,
+    actor: discord.abc.User,
+) -> discord.Embed:
+    row = await _open_loa(bot, guild, member, None)
+    if row is None:
+        return error_embed("Not on leave")
+    now = now_ts()
+    fields = {"status": "expired", "reviewer_id": str(actor.id)}
+    if int(row["start_date"]) <= now:
+        fields["end_date"] = now
+    await bot.db.update_loa(row["id"], **fields)
+    await _sync_personnel_leave(bot, guild, member.id)
+    await bot.db.audit(
+        guild.id,
+        "loa_end",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=member.id,
+        target_name=str(member),
+        details=f"#{row['id']}",
+    )
+    embed = success_embed("Leave ended", f"{member.mention}  •  `#{row['id']}`")
+    await _announce_loa(bot, guild, embed, member, "Your leave has ended.")
+    return embed
+
+
+async def edit_member_loa(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.Member,
+    actor: discord.abc.User,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    reason: str | None = None,
+    loa_id: int | None = None,
+) -> discord.Embed:
+    start_text = (start_date or "").strip()
+    end_text = (end_date or "").strip()
+    note = (reason or "").strip()
+    if not start_text and not end_text and not note:
+        return error_embed("Nothing to change", "Enter a new start date, end date, or reason.")
+    row = await _open_loa(bot, guild, member, loa_id, include_recent=True)
+    if row is None:
+        return error_embed("Not found")
+    if row["status"] == "denied":
+        return error_embed("Not found")
+    tz = await _guild_tz(bot, guild)
+    start = parse_date(start_text, tz) if start_text else int(row["start_date"])
+    end = parse_date(end_text, tz) if end_text else int(row["end_date"])
+    if start_text and start is None:
+        return error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`.")
+    if end_text and end is None:
+        return error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`.")
+    if not start or not end or end <= start:
+        return error_embed("Invalid dates", "End must be after start.")
+    overlap = await _overlapping_approved(bot, guild.id, member.id, start, end, exclude_id=int(row["id"]))
+    if overlap:
+        return error_embed("Leave already scheduled", f"{member.mention} already has leave `#{overlap['id']}`.")
+    now = now_ts()
+    status = str(row["status"])
+    if status == "pending":
+        pass
+    elif end < now:
+        status = "expired"
+    else:
+        status = "approved"
+    fields: dict[str, object] = {
+        "start_date": start,
+        "end_date": end,
+        "status": status,
+        "reviewer_id": str(actor.id),
+    }
+    if note:
+        fields["reason"] = note
+    await bot.db.update_loa(row["id"], **fields)
+    await _sync_personnel_leave(bot, guild, member.id)
+    await bot.db.audit(
+        guild.id,
+        "loa_edit",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=member.id,
+        target_name=str(member),
+        details=f"#{row['id']} {ts(start)} → {ts(end)}",
+    )
+    embed = success_embed("Leave updated", f"{member.mention}  •  `#{row['id']}`")
+    add_fields(
+        embed,
+        [
+            ("Start", ts(start), True),
+            ("End", ts(end), True),
+            ("Reason", note or row["reason"] or "—", False),
+        ],
+    )
+    await _announce_loa(bot, guild, embed, member, f"Your leave was updated.\n{ts(start)} → {ts(end)}")
+    return embed
+
+
+async def _guild_tz(bot: WSPBot, guild: discord.Guild) -> str:
+    cfg = await bot.guild_config(guild.id)
+    return cfg.get("timezone") or "America/Chicago"
+
+
+async def _parse_loa_range(
+    bot: WSPBot, guild: discord.Guild, start_date: str, end_date: str
+) -> tuple[int, int] | discord.Embed:
+    tz = await _guild_tz(bot, guild)
+    start = parse_date(start_date, tz)
+    end = parse_date(end_date, tz)
+    if not start or not end or end <= start:
+        return error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`. End must be after start.")
+    return start, end
+
+
+async def _overlapping_approved(
+    bot: WSPBot,
+    guild_id: int,
+    discord_id: int,
+    start: int,
+    end: int,
+    *,
+    exclude_id: int | None = None,
+) -> object | None:
+    for row in await bot.db.list_member_loa(guild_id, discord_id):
+        if exclude_id is not None and int(row["id"]) == exclude_id:
+            continue
+        if row["status"] != "approved":
+            continue
+        if int(row["start_date"]) < end and int(row["end_date"]) > start:
+            return row
+    return None
+
+
+async def _open_loa(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.Member,
+    loa_id: int | None,
+    *,
+    include_recent: bool = False,
+):
+    if loa_id:
+        row = await bot.db.get_loa(loa_id)
+        if (
+            row is None
+            or str(row["guild_id"]) != str(guild.id)
+            or str(row["discord_id"]) != str(member.id)
+        ):
+            return None
+        return row
+    active = await bot.db.active_loa(guild.id, member.id)
+    if active:
+        return active
+    now = now_ts()
+    upcoming = [
+        r
+        for r in await bot.db.list_member_loa(guild.id, member.id)
+        if r["status"] == "approved" and int(r["end_date"]) >= now
+    ]
+    upcoming.sort(key=lambda r: int(r["start_date"]))
+    if upcoming:
+        return upcoming[0]
+    if include_recent:
+        rows = [r for r in await bot.db.list_member_loa(guild.id, member.id) if r["status"] != "denied"]
+        return rows[0] if rows else None
+    return None
+
+
+async def _sync_personnel_leave(bot: WSPBot, guild: discord.Guild, discord_id: int) -> None:
+    personnel = await bot.db.get_personnel(guild.id, discord_id)
+    if personnel is None or personnel["status"] not in {"active", "loa"}:
+        return
+    wanted = "loa" if await bot.db.active_loa(guild.id, discord_id) else "active"
+    if personnel["status"] != wanted:
+        await bot.db.update_personnel(personnel["id"], status=wanted)
+
+
+async def _announce_loa(
+    bot: WSPBot,
+    guild: discord.Guild,
+    embed: discord.Embed,
+    member: discord.Member,
+    dm_text: str,
+) -> None:
+    await bot.notify(guild, "loa", embed)
+    await bot.notify(guild, "hr_log", embed)
+    await bot.try_dm(member, base_embed("Leave of Absence", dm_text))
 
 
 class LOAMenuView(discord.ui.View):

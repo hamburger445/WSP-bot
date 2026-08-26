@@ -925,19 +925,50 @@ class Database:
 
     # ── LOA ─────────────────────────────────────────────────
     async def create_loa(
-        self, guild_id: int, discord_id: int, start_date: int, end_date: int, reason: str, additional: str | None
+        self,
+        guild_id: int,
+        discord_id: int,
+        start_date: int,
+        end_date: int,
+        reason: str,
+        additional: str | None,
+        *,
+        status: str = "pending",
+        reviewer_id: str | None = None,
     ) -> int:
         cur = await self.execute(
             """
-            INSERT INTO loa_requests (guild_id, discord_id, start_date, end_date, reason, additional_info, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+            INSERT INTO loa_requests (
+                guild_id, discord_id, start_date, end_date, reason, additional_info, status, reviewer_id, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (str(guild_id), str(discord_id), start_date, end_date, reason, additional, now_ts()),
+            (
+                str(guild_id),
+                str(discord_id),
+                start_date,
+                end_date,
+                reason,
+                additional,
+                status,
+                reviewer_id,
+                now_ts(),
+            ),
         )
         return int(cur.lastrowid)
 
     async def get_loa(self, loa_id: int) -> aiosqlite.Row | None:
         return await self.fetchone("SELECT * FROM loa_requests WHERE id = ?", (loa_id,))
+
+    async def list_member_loa(self, guild_id: int, discord_id: int) -> list[aiosqlite.Row]:
+        return await self.fetchall(
+            """
+            SELECT * FROM loa_requests
+            WHERE guild_id = ? AND discord_id = ?
+            ORDER BY created_at DESC
+            """,
+            (str(guild_id), str(discord_id)),
+        )
 
     async def update_loa(self, loa_id: int, **fields: Any) -> None:
         assignments = ", ".join(f"{k} = ?" for k in fields)
