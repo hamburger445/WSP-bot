@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from wsp.constants import COLOR_GOLD, PermissionLevel
+from wsp.constants import COLOR_DANGER, COLOR_GOLD, PermissionLevel
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, success_embed, ts
-from wsp.permissions import has_level
+from wsp.permissions import has_level, resolve_level
 from wsp.utils import ensure_personnel, mention_or_id, parse_date
 
 if TYPE_CHECKING:
@@ -24,7 +26,6 @@ class LOA(commands.Cog):
         self.bot = bot
 
     loa = app_commands.Group(name="loa", description="Leave of absence")
-    admin = app_commands.Group(name="admin", description="Manage a member's leave.", parent=loa)
 
     @loa.command(name="request", description="Request leave.")
     @app_commands.describe(
@@ -75,72 +76,15 @@ class LOA(commands.Cog):
         embed = base_embed("Leave of Absence", "Submit a leave request or view your requests.")
         await interaction.response.send_message(embed=embed, view=LOAMenuView(), ephemeral=True)
 
-    @admin.command(name="start", description="Start a member's leave.")
-    @has_level(PermissionLevel.HR)
-    @app_commands.describe(
-        member="Member",
-        start_date="Start date",
-        end_date="End date",
-        reason="Reason",
-    )
-    async def admin_start(
-        self,
-        interaction: discord.Interaction,
-        member: discord.Member,
-        start_date: str,
-        end_date: str,
-        reason: str | None = None,
-    ) -> None:
-        if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
-            return
-        embed = await start_member_loa(
-            self.bot, interaction.guild, member, start_date, end_date, reason, interaction.user
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @admin.command(name="end", description="End a member's leave.")
+    @loa.command(name="admin", description="Manage a member's leave.")
     @has_level(PermissionLevel.HR)
     @app_commands.describe(member="Member")
-    async def admin_end(self, interaction: discord.Interaction, member: discord.Member) -> None:
+    async def admin(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if not interaction.guild:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
-        embed = await end_member_loa(self.bot, interaction.guild, member, interaction.user)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @admin.command(name="edit", description="Change a member's leave.")
-    @has_level(PermissionLevel.HR)
-    @app_commands.describe(
-        member="Member",
-        start_date="Start date",
-        end_date="End date",
-        reason="Reason",
-        loa_id="Leave ID",
-    )
-    async def admin_edit(
-        self,
-        interaction: discord.Interaction,
-        member: discord.Member,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        reason: str | None = None,
-        loa_id: int | None = None,
-    ) -> None:
-        if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
-            return
-        embed = await edit_member_loa(
-            self.bot,
-            interaction.guild,
-            member,
-            interaction.user,
-            start_date=start_date,
-            end_date=end_date,
-            reason=reason,
-            loa_id=loa_id,
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed = await build_loa_admin_embed(self.bot, interaction.guild, member)
+        await interaction.response.send_message(embed=embed, view=LOAAdminView(member), ephemeral=True)
 
 
 async def create_loa_request(
@@ -426,6 +370,208 @@ async def _announce_loa(
     await bot.notify(guild, "loa", embed)
     await bot.notify(guild, "hr_log", embed)
     await bot.try_dm(member, base_embed("Leave of Absence", dm_text))
+
+
+async def build_loa_admin_embed(
+    bot: WSPBot, guild: discord.Guild, member: discord.Member | None = None
+) -> discord.Embed:
+    embed = base_embed("Leave admin", "Start, end, or change a member's leave.")
+    rows = await bot.db.list_loa(guild.id, "approved")
+    now = now_ts()
+    current = [r for r in rows if int(r["start_date"]) <= now <= int(r["end_date"])]
+    listing = "\n".join(
+        f"{mention_or_id(guild, r['discord_id'])} • {ts(r['start_date'])} → {ts(r['end_date'])}"
+        for r in current[:15]
+    )
+    embed.add_field(name="On leave", value=listing or "No one is on leave.", inline=False)
+    if member:
+        row = await _open_loa(bot, guild, member, None, include_recent=True)
+        if row and row["status"] != "expired":
+            embed.add_field(
+                name="Selected",
+                value=f"{member.mention}  •  `#{row['id']}`\n{ts(row['start_date'])} → {ts(row['end_date'])}",
+                inline=False,
+            )
+        else:
+            embed.add_field(name="Selected", value=f"{member.mention}  •  not on leave", inline=False)
+    return embed
+
+
+def _is_error_embed(embed: discord.Embed) -> bool:
+    return embed.colour is not None and embed.colour.value == COLOR_DANGER
+
+
+async def _admin_allowed(interaction: discord.Interaction) -> bool:
+    if await resolve_level(interaction) < PermissionLevel.HR:
+        await interaction.response.send_message(embed=error_embed("Restricted"), ephemeral=True)
+        return False
+    return True
+
+
+class LOAAdminView(discord.ui.View):
+    def __init__(self, member: discord.Member | None = None) -> None:
+        super().__init__(timeout=240)
+        self.member_id = member.id if member else None
+        if member:
+            for item in self.children:
+                if isinstance(item, discord.ui.UserSelect):
+                    item.default_values = [member]
+
+    @discord.ui.select(cls=discord.ui.UserSelect, placeholder="Select a member", row=0)
+    async def pick_member(self, interaction: discord.Interaction, select: discord.ui.UserSelect) -> None:
+        if not await _admin_allowed(interaction):
+            return
+        picked = select.values[0]
+        self.member_id = picked.id
+        member = await _resolve_admin_member(interaction, picked.id)
+        bot: WSPBot = interaction.client  # type: ignore[assignment]
+        embed = await build_loa_admin_embed(bot, interaction.guild, member) if interaction.guild else error_embed("Guild only")
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Start leave", style=discord.ButtonStyle.success, row=1)
+    async def start_leave(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not await _admin_allowed(interaction):
+            return
+        member = await _selected_admin_member(self, interaction)
+        if member is None:
+            return
+        await interaction.response.send_modal(LOAAdminStartModal(member))
+
+    @discord.ui.button(label="End leave", style=discord.ButtonStyle.danger, row=1)
+    async def end_leave(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not await _admin_allowed(interaction):
+            return
+        member = await _selected_admin_member(self, interaction)
+        if member is None:
+            return
+        bot: WSPBot = interaction.client  # type: ignore[assignment]
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        result = await end_member_loa(bot, interaction.guild, member, interaction.user)
+        if _is_error_embed(result):
+            await interaction.response.send_message(embed=result, ephemeral=True)
+            return
+        embed = await build_loa_admin_embed(bot, interaction.guild, member)
+        await interaction.response.edit_message(embed=embed, view=LOAAdminView(member))
+
+    @discord.ui.button(label="Change leave", style=discord.ButtonStyle.primary, row=1)
+    async def change_leave(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not await _admin_allowed(interaction):
+            return
+        member = await _selected_admin_member(self, interaction)
+        if member is None:
+            return
+        bot: WSPBot = interaction.client  # type: ignore[assignment]
+        if not interaction.guild:
+            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            return
+        row = await _open_loa(bot, interaction.guild, member, None, include_recent=True)
+        if row is None:
+            await interaction.response.send_message(embed=error_embed("Not on leave"), ephemeral=True)
+            return
+        start_default = ""
+        end_default = ""
+        reason_default = ""
+        if row and interaction.guild:
+            tz = ZoneInfo(await _guild_tz(bot, interaction.guild))
+            start_default = datetime.fromtimestamp(int(row["start_date"]), tz).strftime("%Y-%m-%d")
+            end_default = datetime.fromtimestamp(int(row["end_date"]), tz).strftime("%Y-%m-%d")
+            reason_default = str(row["reason"] or "")
+        await interaction.response.send_modal(LOAAdminChangeModal(member, start_default, end_default, reason_default))
+
+
+class LOAAdminStartModal(discord.ui.Modal, title="Start leave"):
+    start_date = discord.ui.TextInput(label="Start date", placeholder="YYYY-MM-DD")
+    end_date = discord.ui.TextInput(label="End date", placeholder="YYYY-MM-DD")
+    reason = discord.ui.TextInput(label="Reason", required=False, max_length=200)
+
+    def __init__(self, member: discord.Member) -> None:
+        super().__init__()
+        self.member = member
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await _finish_admin_modal(
+            interaction,
+            self.member,
+            start_member_loa,
+            str(self.start_date.value),
+            str(self.end_date.value),
+            str(self.reason.value) if self.reason.value else None,
+        )
+
+
+class LOAAdminChangeModal(discord.ui.Modal, title="Change leave"):
+    start_date = discord.ui.TextInput(label="Start date", placeholder="YYYY-MM-DD")
+    end_date = discord.ui.TextInput(label="End date", placeholder="YYYY-MM-DD")
+    reason = discord.ui.TextInput(label="Reason", required=False, max_length=200)
+
+    def __init__(self, member: discord.Member, start_default: str, end_default: str, reason_default: str) -> None:
+        super().__init__()
+        self.member = member
+        if start_default:
+            self.start_date.default = start_default
+        if end_default:
+            self.end_date.default = end_default
+        if reason_default:
+            self.reason.default = reason_default[:200]
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        async def _edit(bot, guild, member, start_date, end_date, reason, actor):
+            return await edit_member_loa(
+                bot, guild, member, actor, start_date=start_date, end_date=end_date, reason=reason
+            )
+
+        await _finish_admin_modal(
+            interaction,
+            self.member,
+            _edit,
+            str(self.start_date.value),
+            str(self.end_date.value),
+            str(self.reason.value) if self.reason.value else None,
+        )
+
+
+async def _finish_admin_modal(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    action,
+    start_date: str,
+    end_date: str,
+    reason: str | None,
+) -> None:
+    bot: WSPBot = interaction.client  # type: ignore[assignment]
+    if not interaction.guild:
+        await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+        return
+    result = await action(bot, interaction.guild, member, start_date, end_date, reason, interaction.user)
+    if _is_error_embed(result):
+        await interaction.response.send_message(embed=result, ephemeral=True)
+        return
+    embed = await build_loa_admin_embed(bot, interaction.guild, member)
+    await interaction.response.edit_message(embed=embed, view=LOAAdminView(member))
+
+
+async def _selected_admin_member(view: LOAAdminView, interaction: discord.Interaction) -> discord.Member | None:
+    if view.member_id is None:
+        await interaction.response.send_message(embed=error_embed("Select a member"), ephemeral=True)
+        return None
+    member = await _resolve_admin_member(interaction, view.member_id)
+    if member is None:
+        await interaction.response.send_message(embed=error_embed("Member not found"), ephemeral=True)
+    return member
+
+
+async def _resolve_admin_member(interaction: discord.Interaction, member_id: int) -> discord.Member | None:
+    if not interaction.guild:
+        return None
+    member = interaction.guild.get_member(member_id)
+    if member:
+        return member
+    try:
+        return await interaction.guild.fetch_member(member_id)
+    except discord.HTTPException:
+        return None
 
 
 class LOAMenuView(discord.ui.View):

@@ -45,7 +45,7 @@ STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
     ]),
     ("Command", "Overview", [
         "`/loa active` — members on leave",
-        "`/loa admin` — start, end, or change leave",
+        "`/loa admin` — manage leave",
         "`/dashboard` — dashboard",
     ]),
     ("Setup", "Server", [
