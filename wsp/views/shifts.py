@@ -164,8 +164,7 @@ async def build_personal_shift(bot: WSPBot, guild: discord.Guild, user: discord.
 async def begin_shift(bot: WSPBot, guild: discord.Guild, member: discord.Member, actor: discord.abc.User) -> ShiftResult:
     cfg = await bot.guild_config(guild.id)
     if not member_can_start_shift(member, cfg):
-        who = "You need" if actor.id == member.id else f"{member.display_name} needs"
-        return ShiftResult(error=f"{who} the certified patrol role to start a shift.")
+        return ShiftResult(error="Cannot start shift.")
     existing = await bot.db.active_shift(guild.id, member.id)
     if existing:
         return ShiftResult(error=f"A shift is already active (started {ts_rel(existing['start_time'])}).")

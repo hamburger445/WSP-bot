@@ -4,8 +4,8 @@
 {% block content %}
 <section class="panel">
   <h2>Reset shift data</h2>
-  <p class="meta">Clears all shift records and duty quota totals.</p>
-  <form method="post" action="/actions" onsubmit="return confirm('Delete every shift record and clear duty quota totals? This cannot be undone.');">
+  <p class="meta">Reset shift data.</p>
+  <form method="post" action="/actions" onsubmit="return confirm('Reset all shift data?');">
     <input type="hidden" name="next" value="/shifts">
     <input type="hidden" name="action" value="reset_shifts">
     <button class="danger-btn" type="submit">Reset all shift data</button>

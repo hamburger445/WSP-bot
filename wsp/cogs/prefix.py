@@ -39,7 +39,8 @@ class Prefix(commands.Cog):
     @commands.command(name="help")
     async def help_cmd(self, ctx: commands.Context) -> None:
         staff = await resolve_user_level(self.bot, ctx.guild.id, ctx.author) >= PermissionLevel.SUPERVISOR  # type: ignore[union-attr]
-        await ctx.send(embed=_catalog_embed("members", staff), view=HelpView(staff))
+        owner = await resolve_user_level(self.bot, ctx.guild.id, ctx.author) >= PermissionLevel.OWNER  # type: ignore[union-attr]
+        await ctx.send(embed=_catalog_embed("members", staff, owner), view=HelpView(staff, owner))
 
     @commands.command(name="ping")
     async def ping_cmd(self, ctx: commands.Context) -> None:
@@ -105,13 +106,7 @@ class Prefix(commands.Cog):
 
     @commands.group(name="shift", invoke_without_command=True)
     async def shift_grp(self, ctx: commands.Context) -> None:
-        await ctx.send(
-            embed=base_embed(
-                "Shift",
-                "`?shift menu` `data` `status` `leaderboard` `history`\n"
-                "`?shift admin start` `end` `edit` `delete`",
-            )
-        )
+        await ctx.send(embed=base_embed("Shift", "Start, pause, resume, or end a shift."))
 
     @shift_grp.command(name="menu")
     async def shift_menu(self, ctx: commands.Context) -> None:
@@ -154,7 +149,7 @@ class Prefix(commands.Cog):
         if member and member.id != ctx.author.id:
             level = await resolve_user_level(self.bot, ctx.guild.id, ctx.author)  # type: ignore[union-attr]
             if level < PermissionLevel.SUPERVISOR:
-                await ctx.send(embed=error_embed("Restricted", "Middle Rank and above can view other members' history."))
+                await ctx.send(embed=error_embed("Restricted"))
                 return
         rows = await self.bot.db.list_shifts(ctx.guild.id, target.id, limit=12)  # type: ignore[union-attr]
         totals = await self.bot.db.shift_totals(ctx.guild.id, target.id)  # type: ignore[union-attr]
@@ -170,15 +165,7 @@ class Prefix(commands.Cog):
     @shift_grp.group(name="admin", invoke_without_command=True)
     @prefix_has_level(PermissionLevel.SUPERVISOR)
     async def shift_admin(self, ctx: commands.Context) -> None:
-        await ctx.send(
-            embed=base_embed(
-                "Shift admin",
-                "`?shift admin start @member`\n"
-                "`?shift admin end @member`\n"
-                "`?shift admin edit @member <shift_id> <hours> <minutes> <seconds>`\n"
-                "`?shift admin delete @member <shift_id>`",
-            )
-        )
+        await ctx.send(embed=base_embed("Shift admin", "Start, end, edit, or delete a member's shift."))
 
     @shift_admin.command(name="start")
     @prefix_has_level(PermissionLevel.SUPERVISOR)
@@ -209,7 +196,7 @@ class Prefix(commands.Cog):
             return
         row = await self.bot.db.get_shift(shift_id)
         if row is None or str(row["guild_id"]) != str(ctx.guild.id) or str(row["discord_id"]) != str(member.id):  # type: ignore[union-attr]
-            await ctx.send(embed=error_embed("Not found", "That shift does not belong to this member."))
+            await ctx.send(embed=error_embed("Not found"))
             return
         was_open = row["status"] in {"active", "paused"}
         await self.bot.db.update_shift(
@@ -237,7 +224,7 @@ class Prefix(commands.Cog):
     async def shift_admin_delete(self, ctx: commands.Context, member: discord.Member, shift_id: int) -> None:
         row = await self.bot.db.get_shift(shift_id)
         if row is None or str(row["guild_id"]) != str(ctx.guild.id) or str(row["discord_id"]) != str(member.id):  # type: ignore[union-attr]
-            await ctx.send(embed=error_embed("Not found", "That shift does not belong to this member."))
+            await ctx.send(embed=error_embed("Not found"))
             return
         if row["status"] in {"active", "paused"}:
             cfg = await self.bot.guild_config(ctx.guild.id)  # type: ignore[union-attr]
@@ -252,7 +239,7 @@ class Prefix(commands.Cog):
 
     @commands.group(name="quota", invoke_without_command=True)
     async def quota_grp(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("Quota", "`?quota view` `leaderboard` `admin`"))
+        await ctx.send(embed=base_embed("Quota", "View quota or standings."))
 
     @quota_grp.command(name="view")
     async def quota_view(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
@@ -318,7 +305,7 @@ class Prefix(commands.Cog):
 
     @commands.group(name="loa", invoke_without_command=True)
     async def loa_grp(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("LOA", "`?loa menu` `request` `active` `admin`"))
+        await ctx.send(embed=base_embed("LOA", "Request leave or view leave."))
 
     @loa_grp.command(name="menu")
     async def loa_menu(self, ctx: commands.Context) -> None:
@@ -363,17 +350,17 @@ class Prefix(commands.Cog):
     @commands.command(name="setupserver")
     @prefix_is_owner()
     async def setupserver_cmd(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("Setup", "Set up the server with `/setupserver`."))
+        await ctx.send(embed=base_embed("Setup", "Set up the server."))
 
     @commands.command(name="verifysetup")
     @prefix_is_owner()
     async def verifysetup_cmd(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("Verify setup", "Check setup with `/verifysetup`."))
+        await ctx.send(embed=base_embed("Verify setup", "Check setup."))
 
     @commands.command(name="config")
     @prefix_is_owner()
     async def config_cmd(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("Config", "View or change settings with `/config`."))
+        await ctx.send(embed=base_embed("Config", "View or change settings."))
 
     @commands.command(name="sync")
     @prefix_is_owner()

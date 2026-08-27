@@ -68,7 +68,7 @@ class DashboardView(discord.ui.View):
         await interaction.response.send_message(
             embed=base_embed(
                 "Reset shift data?",
-                "This deletes every shift record and clears duty quota totals for this server. This cannot be undone.",
+                "This cannot be undone.",
             ),
             view=ConfirmShiftResetView(),
             ephemeral=True,
@@ -85,9 +85,9 @@ class ConfirmShiftResetView(discord.ui.View):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
         bot: WSPBot = interaction.client  # type: ignore[assignment]
-        deleted = await reset_shift_data(bot, interaction.guild, interaction.user)
+        await reset_shift_data(bot, interaction.guild, interaction.user)
         await interaction.response.edit_message(
-            embed=success_embed("Shift data reset", f"Removed {deleted} shift record(s). Duty quota minutes were cleared."),
+            embed=success_embed("Shift data reset"),
             view=None,
         )
 

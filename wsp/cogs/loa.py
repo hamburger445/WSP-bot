@@ -707,9 +707,9 @@ async def _decide_loa(bot: WSPBot, interaction: discord.Interaction, loa_id: int
 
     if await resolve_level(interaction) < PermissionLevel.HR:
         if interaction.response.is_done():
-            await interaction.followup.send(embed=error_embed("Restricted", "HR only."), ephemeral=True)
+            await interaction.followup.send(embed=error_embed("Restricted"), ephemeral=True)
         else:
-            await interaction.response.send_message(embed=error_embed("Restricted", "HR only."), ephemeral=True)
+            await interaction.response.send_message(embed=error_embed("Restricted"), ephemeral=True)
         return
     row = await bot.db.get_loa(loa_id)
     if row is None:

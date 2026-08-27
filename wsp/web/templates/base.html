@@ -32,7 +32,7 @@
       </nav>
       <div class="rail-foot">
         <div class="signal {{ 'live' if bot_ready else 'down' }}"></div>
-        <span>{{ 'Gateway connected' if bot_ready else 'Bot offline' }}</span>
+        <span>{{ 'Online' if bot_ready else 'Offline' }}</span>
       </div>
     </aside>
     <main class="stage">
@@ -69,7 +69,7 @@
         <div class="banner">{{ error }}</div>
       {% endif %}
       {% if denied %}
-        <div class="banner">That desk requires a higher access level.</div>
+        <div class="banner">Restricted.</div>
       {% endif %}
       {% block content %}{% endblock %}
     </main>

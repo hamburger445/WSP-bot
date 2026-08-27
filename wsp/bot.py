@@ -212,28 +212,24 @@ class WSPBot(commands.Bot):
 
         orig = error.original if isinstance(error, app_commands.CommandInvokeError) else error
         if isinstance(orig, InsufficientPermission) or isinstance(error, InsufficientPermission):
-            required = getattr(orig, "required", None) or getattr(error, "required", None)
-            msg = str(error)
             embed = discord.Embed(
-                title="Access restricted",
-                description=msg if msg else "You do not have permission to use this command.",
+                title="Restricted",
+                description="You cannot use this command.",
                 color=COLOR_DANGER,
             )
             embed.set_footer(text=FOOTER)
-            if required:
-                embed.add_field(name="Required access", value=str(required.name).title(), inline=True)
             await _respond_error(interaction, embed)
             return
         if isinstance(error, app_commands.MissingPermissions):
             await _respond_error(
                 interaction,
-                discord.Embed(title="Missing Discord permission", description=str(error), color=COLOR_DANGER),
+                discord.Embed(title="Restricted", description="You cannot use this command.", color=COLOR_DANGER),
             )
             return
         log.error("Command error:\n%s", "".join(traceback.format_exception(error)))
         embed = discord.Embed(
             title="Command failed",
-            description="An unexpected error occurred. The incident has been recorded.",
+            description="Something went wrong.",
             color=COLOR_DANGER,
         )
         embed.set_footer(text=FOOTER)
@@ -269,7 +265,7 @@ class WSPBot(commands.Bot):
         if isinstance(error, (commands.CheckFailure, commands.MissingRequiredArgument, commands.BadArgument)):
             embed = discord.Embed(
                 title="Command failed",
-                description=str(error) or "That command could not be run.",
+                description="That command could not be run.",
                 color=COLOR_DANGER,
             )
             embed.set_footer(text=FOOTER)
@@ -283,7 +279,7 @@ class WSPBot(commands.Bot):
             await ctx.send(
                 embed=discord.Embed(
                     title="Command failed",
-                    description="An unexpected error occurred. The incident has been recorded.",
+                    description="Something went wrong.",
                     color=COLOR_DANGER,
                 )
             )

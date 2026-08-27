@@ -14,7 +14,7 @@
   <section class="panel">
     <h2>Run a command</h2>
     <p class="meta">Promote, demote, fire, and related actions.</p>
-    <form class="form-grid" method="post" action="/actions" onsubmit="if (this.querySelector('[name=action]').value === 'reset_shifts') return confirm('Delete every shift record and clear duty quota totals?');">
+    <form class="form-grid" method="post" action="/actions" onsubmit="if (this.querySelector('[name=action]').value === 'reset_shifts') return confirm('Reset all shift data?');">
       <input type="hidden" name="next" value="/">
       <label class="field">Action
         <select name="action" required>
@@ -29,8 +29,8 @@
           <option value="reset_shifts">Reset all shift data</option>
         </select>
       </label>
-      <label class="field">Discord ID
-        <input name="discord_id" inputmode="numeric" placeholder="1391201462259810354">
+      <label class="field">Member
+        <input name="discord_id" inputmode="numeric">
       </label>
       <label class="field">Rank
         <select name="rank">
@@ -39,7 +39,7 @@
         </select>
       </label>
       <label class="field">Reason / note
-        <input name="reason" placeholder="Required for suspend, remove">
+        <input name="reason">
       </label>
       <button class="gold-btn" type="submit">Apply</button>
     </form>

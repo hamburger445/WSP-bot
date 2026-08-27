@@ -88,7 +88,7 @@ class Shifts(commands.Cog):
         if member and member.id != interaction.user.id:
             if await resolve_level(interaction) < PermissionLevel.SUPERVISOR:
                 await interaction.response.send_message(
-                    embed=error_embed("Restricted", "Middle Rank and above can view other members' history."),
+                    embed=error_embed("Restricted"),
                     ephemeral=True,
                 )
                 return
@@ -151,7 +151,7 @@ class Shifts(commands.Cog):
             return
         row = await self.bot.db.get_shift(shift_id)
         if row is None or str(row["guild_id"]) != str(interaction.guild.id) or str(row["discord_id"]) != str(member.id):
-            await interaction.response.send_message(embed=error_embed("Not found", "That shift does not belong to this member."), ephemeral=True)
+            await interaction.response.send_message(embed=error_embed("Not found"), ephemeral=True)
             return
         was_open = row["status"] in {"active", "paused"}
         end_time = int(row["start_time"]) + duration
@@ -193,7 +193,7 @@ class Shifts(commands.Cog):
             return
         row = await self.bot.db.get_shift(shift_id)
         if row is None or str(row["guild_id"]) != str(interaction.guild.id) or str(row["discord_id"]) != str(member.id):
-            await interaction.response.send_message(embed=error_embed("Not found", "That shift does not belong to this member."), ephemeral=True)
+            await interaction.response.send_message(embed=error_embed("Not found"), ephemeral=True)
             return
         if row["status"] in {"active", "paused"}:
             cfg = await self.bot.guild_config(interaction.guild.id)

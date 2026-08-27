@@ -64,9 +64,10 @@ class Help(commands.Cog):
     @app_commands.command(name="help", description="Show available commands.")
     async def help(self, interaction: discord.Interaction) -> None:
         staff = await _is_staff(interaction)
+        owner = await _is_owner(interaction)
         await interaction.response.send_message(
-            embed=_catalog_embed("members", staff),
-            view=HelpView(staff),
+            embed=_catalog_embed("members", staff, owner),
+            view=HelpView(staff, owner),
             ephemeral=True,
         )
 
@@ -81,38 +82,47 @@ async def _is_staff(interaction: discord.Interaction) -> bool:
     return await resolve_level(interaction) >= PermissionLevel.SUPERVISOR
 
 
-def _catalog_embed(section: str, staff: bool) -> discord.Embed:
+async def _is_owner(interaction: discord.Interaction) -> bool:
+    return await resolve_level(interaction) >= PermissionLevel.OWNER
+
+
+def _catalog_embed(section: str, staff: bool, owner: bool = False) -> discord.Embed:
     intro = "Available commands."
     embed = base_embed("Commands", intro, color=COLOR_NAVY)
-    rows = _rows_for(section, staff)
+    rows = _rows_for(section, staff, owner)
     for title, subtitle, lines in rows:
         embed.add_field(name=f"{title}  ·  {subtitle}", value="\n".join(lines), inline=False)
     return embed
 
 
-def _rows_for(section: str, staff: bool) -> list[tuple[str, str, list[str]]]:
+def _rows_for(section: str, staff: bool, owner: bool = False) -> list[tuple[str, str, list[str]]]:
+    staff_rows = list(STAFF_CATALOG) if staff else []
+    if staff and not owner:
+        staff_rows = [row for row in staff_rows if row[0] != "Setup"]
     if section == "staff" and staff:
-        return STAFF_CATALOG
+        return staff_rows
     if section == "all" and staff:
-        return MEMBER_CATALOG + STAFF_CATALOG
+        return MEMBER_CATALOG + staff_rows
     if section == "members":
         return MEMBER_CATALOG
-    for title, subtitle, lines in MEMBER_CATALOG + (STAFF_CATALOG if staff else []):
+    for title, subtitle, lines in MEMBER_CATALOG + staff_rows:
         if title.lower() == section.lower():
             return [(title, subtitle, lines)]
     return MEMBER_CATALOG
 
 
 class HelpView(discord.ui.View):
-    def __init__(self, staff: bool) -> None:
+    def __init__(self, staff: bool, owner: bool = False) -> None:
         super().__init__(timeout=180)
         self.staff = staff
-        self.add_item(HelpSelect(staff))
+        self.owner = owner
+        self.add_item(HelpSelect(staff, owner))
 
 
 class HelpSelect(discord.ui.Select):
-    def __init__(self, staff: bool) -> None:
+    def __init__(self, staff: bool, owner: bool = False) -> None:
         self.staff = staff
+        self.owner = owner
         options = [discord.SelectOption(label="Commands", value="members")]
         if staff:
             options.append(discord.SelectOption(label="Staff commands", value="staff"))
@@ -121,11 +131,11 @@ class HelpSelect(discord.ui.Select):
             discord.SelectOption(label=title, value=title, description=subtitle)
             for title, subtitle, _ in MEMBER_CATALOG
         )
-        super().__init__(placeholder="Filter the command list…", options=options)
+        super().__init__(placeholder="Choose a section", options=options)
 
     async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.edit_message(
-            embed=_catalog_embed(self.values[0], self.staff),
+            embed=_catalog_embed(self.values[0], self.staff, self.owner),
             view=self.view,
         )
 

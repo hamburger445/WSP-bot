@@ -7,7 +7,7 @@
   <form class="form-grid form-inline" method="post" action="/actions">
     <input type="hidden" name="next" value="/personnel">
     <input type="hidden" name="action" value="add">
-    <label class="field">Discord ID <input name="discord_id" required inputmode="numeric"></label>
+    <label class="field">Member <input name="discord_id" required inputmode="numeric"></label>
     <label class="field">Rank
       <select name="rank" required>
         {% for r in ranks %}<option value="{{ r.name }}">{{ r.name }}</option>{% endfor %}
@@ -20,14 +20,14 @@
 </section>
 <section class="panel spaced">
   <div class="toolbar">
-    <input class="search" data-filter-table type="search" placeholder="Filter roster by name, rank, or ID…">
+    <input class="search" data-filter-table type="search" placeholder="Filter roster…">
   </div>
   <table>
     <thead><tr><th>Member</th><th>Rank</th><th>Position</th><th>Status</th></tr></thead>
     <tbody>
       {% for row in rows %}
       <tr>
-        <td><a href="/personnel/{{ row.discord_id }}">{{ row.username }}</a><div class="mono">{{ row.discord_id }}</div></td>
+        <td><a href="/personnel/{{ row.discord_id }}">{{ row.username }}</a></td>
         <td>{{ row.rank_name or "—" }}</td>
         <td>{{ row.position or "Patrol" }}</td>
         <td><span class="pill {{ row.status }}">{{ row.status }}</span></td>

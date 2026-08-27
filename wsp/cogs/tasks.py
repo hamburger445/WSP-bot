@@ -101,7 +101,7 @@ class ScheduledTasks(commands.Cog):
                 await self.bot.db.set_quota_notified(row["id"])
                 embed = warning_embed(
                     "Missed quota",
-                    f"{mention_or_id(guild, discord_id)} finished the week at **{done}/{required}** minutes. No automatic punishment was applied.",
+                    f"{mention_or_id(guild, discord_id)} finished the week at **{done}/{required}** minutes.",
                 )
                 await self.bot.notify(guild, "quota", embed)
                 await self.bot.notify(guild, "hr_log", embed)

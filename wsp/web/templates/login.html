@@ -18,35 +18,23 @@
       <p class="kicker">Lakeville Roleplay</p>
       <p class="login-state">Wisconsin</p>
       <h1>State Patrol</h1>
-      <p class="lede">Authorized personnel only. Sign-ins are logged against the department audit file.</p>
+      <p class="lede">Sign in to continue.</p>
       <div class="login-status">
         <div class="signal {{ 'live' if bot_ready else 'down' }}"></div>
-        <span>{{ 'Gateway connected' if bot_ready else 'Bot offline — check Render logs and DISCORD_TOKEN' }}</span>
+        <span>{{ 'Online' if bot_ready else 'Offline' }}</span>
       </div>
     </aside>
     <section class="login-panel">
       <p class="eyebrow">Command Center</p>
-      <h2>Owner sign in</h2>
-      <p class="lede">This Command Center is limited to accounts listed in OWNER_IDS.</p>
-      {% if error == 'guild' %}
-        <p class="banner">You are not a member of the configured WSP guild.</p>
-      {% elif error == 'owner' %}
-        <p class="banner">Only the bot owner can open the Command Center.</p>
-      {% elif error == 'redirect' %}
-        <p class="banner">Discord rejected the redirect URL. Add the exact URI below under OAuth2 → Redirects.</p>
-      {% elif error %}
-        <p class="banner">Sign-in failed. Check OAuth client ID, secret, and redirect URL.</p>
+      <h2>Sign in</h2>
+      {% if error %}
+        <p class="banner">Sign-in failed.</p>
       {% endif %}
       {% if oauth_ready %}
         <a class="gold-btn" href="/auth/discord">Continue with Discord</a>
       {% else %}
-        <p class="banner">Set <code>DISCORD_CLIENT_ID</code> and <code>DISCORD_CLIENT_SECRET</code> on the host.</p>
+        <p class="banner">Sign-in is not configured.</p>
       {% endif %}
-      <details class="oauth-help">
-        <summary>OAuth redirect URI</summary>
-        <p>Discord Developer Portal → OAuth2 → Redirects. Paste exactly:</p>
-        <p class="mono oauth-uri">{{ oauth_redirect }}</p>
-      </details>
     </section>
   </div>
 </body>

@@ -151,12 +151,12 @@ async def reset_shift_data(bot: WSPBot, guild: discord.Guild, actor: discord.abc
     await bot.notify(
         guild,
         "shift_log",
-        base_embed("Shift data reset", f"{actor.mention} cleared all shift records and duty quota totals."),
+        base_embed("Shift data reset", f"{actor.mention} reset shift data."),
     )
     await bot.notify(
         guild,
         "command_log",
-        base_embed("Shift data reset", f"{actor.mention} cleared all shift records."),
+        base_embed("Shift data reset", f"{actor.mention} reset shift data."),
     )
     return deleted
 
@@ -207,11 +207,11 @@ async def decide_loa_record(
 ) -> str | None:
     row = await bot.db.get_loa(loa_id)
     if row is None:
-        return "LOA request not found."
+        return "Not found."
     if str(row["guild_id"]) != str(guild.id):
-        return "That request is not in this guild."
+        return "Not found."
     if row["status"] != "pending":
-        return f"This request is already `{row['status']}`."
+        return "Already decided."
     await bot.db.update_loa(loa_id, status=status, reviewer_id=str(actor.id), review_note=note)
     personnel = await bot.db.get_personnel(guild.id, int(row["discord_id"]))
     if personnel and status == "approved":

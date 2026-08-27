@@ -1,12 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Settings{% endblock %}
-{% block heading %}Department configuration{% endblock %}
+{% block heading %}Settings{% endblock %}
 {% block content %}
 {% if missing %}
-<div class="banner">Missing required keys: {{ missing | join(", ") }}. Run /setupserver in Discord or set values with /config.</div>
+<div class="banner">Setup is incomplete.</div>
 {% endif %}
 <section class="panel">
-  <h2>Stored configuration</h2>
-  <pre class="mono code-block">{{ cfg | tojson(indent=2) }}</pre>
+  <p class="meta">Department settings.</p>
 </section>
 {% endblock %}

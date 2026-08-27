@@ -177,7 +177,6 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 request,
                 oauth_ready=ready,
                 error=request.query_params.get("error"),
-                oauth_redirect=redirect_uri(request),
             ),
         )
 
@@ -369,7 +368,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
         actor = _Actor(user)
         g = guild()
         if g is None:
-            return bounce_to(next, err="Bot is not in the guild yet.")
+            return bounce_to(next, err="Unavailable")
         try:
             message = await _run_action(
                 action=action,
@@ -392,7 +391,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return bounce_to(next, err=str(exc))
         except Exception:
             log.exception("Web action %s failed", action)
-            return bounce_to(next, err="That action failed. Check Render logs.")
+            return bounce_to(next, err="That action failed.")
         return bounce_to(next, ok=message)
 
     async def _run_action(**kwargs: Any) -> str:
@@ -405,7 +404,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
 
         if action == "reset_shifts":
             deleted = await reset_shift_data(bot, g, actor)
-            return f"Cleared {deleted} shift record(s) and duty quota totals."
+            return f"Cleared shift data."
 
         if action == "quota_set":
             cfg = await bot.guild_config(g.id)
@@ -435,11 +434,11 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return f"LOA #{kwargs['loa_id']} {status}."
 
         if discord_id is None:
-            raise ValueError("Discord ID is required.")
+            raise ValueError("Member is required.")
 
         if action == "add":
             if member is None:
-                raise ValueError("Could not find that Discord member in the guild.")
+                raise ValueError("Member not found.")
             if not kwargs["rank"]:
                 raise ValueError("Rank is required.")
             rank_row = await db.get_rank_by_name(g.id, kwargs["rank"])
@@ -457,7 +456,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return f"{member} added as {kwargs['rank']}."
 
         if member is None:
-            raise ValueError("Could not find that Discord member in the guild. The bot may need the Members intent.")
+            raise ValueError("Member not found.")
 
         if action == "note":
             record = await ensure_personnel(bot, member)
@@ -493,7 +492,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
         if action == "end_shift":
             await end_active_shift(bot, g, member.id)
             return f"Active shift ended for {member}."
-        raise ValueError(f"Unknown action {action}")
+        raise ValueError("That action could not be run.")
 
     return app
 

@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from wsp.constants import LEVEL_LABELS, PermissionLevel
+from wsp.constants import PermissionLevel
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class InsufficientPermission(app_commands.CheckFailure):
     def __init__(self, required: PermissionLevel) -> None:
         self.required = required
-        super().__init__(f"Requires {LEVEL_LABELS[required]} access or higher.")
+        super().__init__("Restricted")
 
 
 async def resolve_user_level(bot: WSPBot, guild_id: int, user: discord.abc.User) -> PermissionLevel:
@@ -83,7 +83,7 @@ def prefix_has_level(required: PermissionLevel) -> Callable:
         level = await resolve_user_level(bot, guild_id, ctx.author)
         if level >= required:
             return True
-        raise commands.CheckFailure(f"Requires {LEVEL_LABELS[required]} access or higher.")
+        raise commands.CheckFailure("Restricted")
 
     return commands.check(predicate)
 
@@ -93,7 +93,7 @@ def prefix_is_owner() -> Callable:
         bot: WSPBot = ctx.bot  # type: ignore[assignment]
         if ctx.author.id in bot.settings.owner_ids:
             return True
-        raise commands.CheckFailure("Owner access is required.")
+        raise commands.CheckFailure("Restricted")
 
     return commands.check(predicate)
 

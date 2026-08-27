@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import COLOR_NAVY
-from wsp.embeds import add_fields, base_embed, error_embed, success_embed, warning_embed
+from wsp.embeds import base_embed, error_embed, success_embed, warning_embed
 from wsp.permissions import is_owner
 
 if TYPE_CHECKING:
@@ -95,7 +95,7 @@ class Setup(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="setupserver", description="Set role and channel IDs.")
+    @app_commands.command(name="setupserver", description="Set up the server.")
     @is_owner()
     async def setupserver(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
@@ -136,24 +136,13 @@ class Setup(commands.Cog):
                 missing_discord.append(f"category {key} (`{cid}`)")
         for rid in cfg.fire_role_ids():
             if guild.get_role(rid) is None:
-                missing_discord.append(f"fire extra role (`{rid}`)")
+                missing_discord.append("role")
         tables = await self.bot.db.fetchall("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         table_names = [r["name"] for r in tables]
         required_tables = ["personnel", "shifts", "audit_log", "loa_requests"]
         missing_tables = [t for t in required_tables if t not in table_names]
         ok = not missing_cfg and not missing_discord and not missing_tables
-        embed = success_embed("Setup verification", "Setup is complete.") if ok else warning_embed(
-            "Setup incomplete",
-        )
-        add_fields(
-            embed,
-            [
-                ("Unset IDs", _clip(missing_cfg), False),
-                ("IDs not found in this server", _clip(missing_discord), False),
-                ("Missing tables", ", ".join(missing_tables) or "None", False),
-                ("Tables present", str(len(table_names)), True),
-            ],
-        )
+        embed = success_embed("Setup", "Setup is complete.") if ok else warning_embed("Setup incomplete")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="config", description="View or change settings.")
@@ -165,27 +154,13 @@ class Setup(commands.Cog):
             return
         cfg = await self.bot.guild_config(interaction.guild.id)
         if not path:
-            embed = base_embed("Department configuration", "Current settings.")
-            roles = cfg.get("roles") or {}
-            channels = cfg.get("channels") or {}
-            embed.add_field(name="Roles", value="\n".join(f"`{k}` → `{v or 'unset'}`" for k, v in roles.items()) or "—", inline=True)
-            ch_preview = list(channels.items())[:10]
-            embed.add_field(name="Channels", value="\n".join(f"`{k}` → `{v or 'unset'}`" for k, v in ch_preview) or "—", inline=True)
-            embed.add_field(
-                name="Quota",
-                value=(
-                    f"LR `{cfg.get('quota', 'low_minutes') or 90}`  •  "
-                    f"MR `{cfg.get('quota', 'middle_minutes') or 75}`  •  "
-                    f"HR `{cfg.get('quota', 'high_minutes') or 30}` min/week"
-                ),
-                inline=False,
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=base_embed("Settings", "Enter a setting name to view or change it."), ephemeral=True)
             return
         keys = [p for p in path.split(".") if p]
         if value is None:
-            current = cfg.get(*keys, default="(unset)")
-            await interaction.response.send_message(embed=base_embed("Config value", f"`{path}` = `{current}`"), ephemeral=True)
+            current = cfg.get(*keys, default=None)
+            state = "Set" if current not in {None, ""} else "Unset"
+            await interaction.response.send_message(embed=base_embed("Setting", state), ephemeral=True)
             return
         if keys[0] in {"roles", "channels", "categories", "rank_roles", "guild_id"}:
             parsed_id = parse_snowflake(value)
@@ -206,7 +181,7 @@ class Setup(commands.Cog):
             actor_name=str(interaction.user),
             details=f"{path} = {display}",
         )
-        await interaction.response.send_message(embed=success_embed("Configuration updated", f"`{path}` set to `{display}`."), ephemeral=True)
+        await interaction.response.send_message(embed=success_embed("Setting saved"), ephemeral=True)
 
     @app_commands.command(name="sync", description="Sync commands.")
     @is_owner()
@@ -241,10 +216,10 @@ async def _show_step(bot: WSPBot, interaction: discord.Interaction, step_index: 
 async def _step_embed(guild: discord.Guild, cfg, step_index: int) -> discord.Embed:
     step = WIZARD_STEPS[step_index]
     current = _format_current(guild, cfg, step)
-    kind_label = {"role": "role ID", "rank": "role ID", "channel": "channel ID", "category": "category ID"}[step.kind]
+    kind_label = {"role": "role", "rank": "role", "channel": "channel", "category": "category"}[step.kind]
     embed = base_embed(
         f"Setup  •  {step_index + 1} of {len(WIZARD_STEPS)}",
-        f"**{step.question}**\n\nEnter the {kind_label}, then press **Enter ID**.",
+        f"**{step.question}**\n\nEnter the {kind_label}, then press **Enter**.",
         color=COLOR_NAVY,
     )
     embed.add_field(name="Currently", value=current, inline=False)
@@ -258,16 +233,9 @@ async def _finish_wizard(bot: WSPBot, interaction: discord.Interaction, *, edit:
         return
     cfg = await bot.guild_config(guild.id)
     missing = cfg.missing_required()
-    embed = success_embed(
-        "Setup complete",
-        "All questions are done. The bot will use the IDs you entered.",
-    )
+    embed = success_embed("Setup complete")
     if missing:
-        embed = warning_embed(
-            "Setup finished with skips",
-            "Some IDs were skipped. Run `/setupserver` again to fill them in, or `/verifysetup` to see what is missing.",
-        )
-        embed.add_field(name="Still unset", value=_clip(missing), inline=False)
+        embed = warning_embed("Setup incomplete")
     view = None
     if edit:
         await interaction.response.edit_message(embed=embed, view=view)
@@ -282,7 +250,7 @@ class SetupWizardView(discord.ui.View):
         if step_index <= 0:
             self.back.disabled = True
 
-    @discord.ui.button(label="Enter ID", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Enter", style=discord.ButtonStyle.primary)
     async def enter_id(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         step = WIZARD_STEPS[self.step_index]
         await interaction.response.send_modal(SetupIdModal(self.step_index, step))
@@ -298,17 +266,16 @@ class SetupWizardView(discord.ui.View):
         await _show_step(bot, interaction, max(0, self.step_index - 1), edit=True)
 
 
-class SetupIdModal(discord.ui.Modal, title="Enter Discord ID"):
+class SetupIdModal(discord.ui.Modal, title="Setup"):
     snowflake = discord.ui.TextInput(
         label="ID",
-        placeholder="123456789012345678",
         min_length=5,
         max_length=80,
     )
 
     def __init__(self, step_index: int, step: WizardStep) -> None:
         super().__init__()
-        kind_label = {"role": "Role ID", "rank": "Role ID", "channel": "Channel ID", "category": "Category ID"}[step.kind]
+        kind_label = {"role": "Role", "rank": "Role", "channel": "Channel", "category": "Category"}[step.kind]
         self.snowflake.label = kind_label
         self.step_index = step_index
         self.step = step
@@ -328,9 +295,8 @@ class SetupIdModal(discord.ui.Modal, title="Enter Discord ID"):
             return
         resolved = await _resolve_id(guild, self.step.kind, snowflake)
         if resolved is None:
-            kind = {"role": "role", "rank": "role", "channel": "text channel", "category": "category"}[self.step.kind]
             await interaction.response.send_message(
-                embed=error_embed("Not found", f"No {kind} with ID `{snowflake}` in this server."),
+                embed=error_embed("Not found"),
                 ephemeral=True,
             )
             return
@@ -382,14 +348,12 @@ def _first_missing_step(cfg) -> int:
 def _format_current(guild: discord.Guild, cfg, step: WizardStep) -> str:
     sid = _stored_id(cfg, step)
     if not sid:
-        return "Not set yet"
+        return "Not set"
     if step.kind in {"role", "rank"}:
         role = guild.get_role(sid)
-        return f"{role.mention} `{sid}`" if role else f"`{sid}` (not found in this server)"
+        return role.mention if role else "Not found"
     channel = guild.get_channel(sid)
-    if channel is not None:
-        return f"{channel.mention} `{sid}`"
-    return f"`{sid}` (not found in this server)"
+    return channel.mention if channel is not None else "Not found"
 
 
 async def _resolve_id(guild: discord.Guild, kind: str, snowflake: int) -> discord.abc.Snowflake | None:
