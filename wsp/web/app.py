@@ -488,7 +488,10 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 raise ValueError(err)
             return f"{member} demoted to {kwargs['rank']}."
         if action == "fire":
-            return await fire_member(bot, g, member, reason, actor)
+            message = await fire_member(bot, g, member, reason, actor)
+            if message == "Restricted":
+                raise ValueError(message)
+            return message
         if action == "end_shift":
             await end_active_shift(bot, g, member.id)
             return f"Active shift ended for {member}."

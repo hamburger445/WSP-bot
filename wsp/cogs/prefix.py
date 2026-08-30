@@ -47,6 +47,21 @@ class Prefix(commands.Cog):
         ms = round(self.bot.latency * 1000)
         await ctx.send(f"Pong — **{ms} ms**")
 
+    @commands.command(name="say")
+    @prefix_has_level(PermissionLevel.HR)
+    async def say_cmd(self, ctx: commands.Context, *, message: str) -> None:
+        if not isinstance(ctx.channel, (discord.TextChannel, discord.Thread)):
+            return
+        text = message.replace("@everyone", "everyone").replace("@here", "here")[:2000]
+        try:
+            await ctx.channel.send(text)
+            try:
+                await ctx.message.delete()
+            except discord.HTTPException:
+                pass
+        except discord.HTTPException:
+            await ctx.send(embed=error_embed("Could not send"))
+
     @commands.command(name="dashboard")
     @prefix_has_level(PermissionLevel.HR)
     async def dashboard_cmd(self, ctx: commands.Context) -> None:
@@ -55,26 +70,20 @@ class Prefix(commands.Cog):
 
     @commands.command(name="promote")
     @prefix_has_level(PermissionLevel.HR)
-    async def promote_cmd(
-        self,
-        ctx: commands.Context,
-        member: discord.Member,
-        rank: str,
-        *,
-        reason: str,
-    ) -> None:
+    async def promote_cmd(self, ctx: commands.Context, member: discord.Member, *, rest: str) -> None:
+        rank, reason = await _split_rank_reason(self.bot, ctx.guild.id, rest)  # type: ignore[union-attr]
+        if not rank or not reason:
+            await ctx.send(embed=error_embed("Command failed", "That command could not be run."))
+            return
         await self._rank(ctx, member, rank, reason, "promotion")
 
     @commands.command(name="demote")
     @prefix_has_level(PermissionLevel.HR)
-    async def demote_cmd(
-        self,
-        ctx: commands.Context,
-        member: discord.Member,
-        rank: str,
-        *,
-        reason: str,
-    ) -> None:
+    async def demote_cmd(self, ctx: commands.Context, member: discord.Member, *, rest: str) -> None:
+        rank, reason = await _split_rank_reason(self.bot, ctx.guild.id, rest)  # type: ignore[union-attr]
+        if not rank or not reason:
+            await ctx.send(embed=error_embed("Command failed", "That command could not be run."))
+            return
         await self._rank(ctx, member, rank, reason, "demotion")
 
     @commands.command(name="fire")
@@ -87,6 +96,9 @@ class Prefix(commands.Cog):
         reason: str = "",
     ) -> None:
         message = await fire_member(self.bot, ctx.guild, member, reason, ctx.author)  # type: ignore[arg-type]
+        if message == "Restricted":
+            await ctx.send(embed=error_embed("Restricted"))
+            return
         await ctx.send(embed=success_embed("Member fired", message))
 
     async def _rank(
@@ -98,6 +110,9 @@ class Prefix(commands.Cog):
         action: str,
     ) -> None:
         error = await change_rank(self.bot, ctx.guild, member, rank, reason, ctx.author, action)  # type: ignore[arg-type]
+        if error == "Restricted":
+            await ctx.send(embed=error_embed("Restricted"))
+            return
         if error:
             await ctx.send(embed=error_embed("Invalid rank change", error))
             return
@@ -371,6 +386,21 @@ class Prefix(commands.Cog):
         else:
             synced = await self.bot.tree.sync()
         await ctx.send(embed=success_embed("Commands synced", f"{len(synced)} commands published."))
+
+
+async def _split_rank_reason(bot: WSPBot, guild_id: int, rest: str) -> tuple[str | None, str]:
+    text = rest.strip()
+    if not text:
+        return None, ""
+    ranks = await bot.db.list_ranks(guild_id)
+    names = sorted((str(row["name"]) for row in ranks), key=len, reverse=True)
+    lower = text.lower()
+    for name in names:
+        key = name.lower()
+        if lower == key or lower.startswith(f"{key} "):
+            return name, text[len(name) :].strip()
+    parts = text.split(None, 1)
+    return parts[0], parts[1] if len(parts) > 1 else ""
 
 
 async def _prefix_shift_result(ctx: commands.Context, result) -> None:

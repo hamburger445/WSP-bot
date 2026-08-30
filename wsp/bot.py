@@ -262,7 +262,19 @@ class WSPBot(commands.Bot):
         if isinstance(error, commands.CommandNotFound):
             return
         orig = error.original if isinstance(error, commands.CommandInvokeError) else error
-        if isinstance(error, (commands.CheckFailure, commands.MissingRequiredArgument, commands.BadArgument)):
+        if isinstance(error, commands.CheckFailure):
+            embed = discord.Embed(
+                title="Restricted",
+                description="You cannot use this command.",
+                color=COLOR_DANGER,
+            )
+            embed.set_footer(text=FOOTER)
+            try:
+                await ctx.send(embed=embed)
+            except discord.HTTPException:
+                pass
+            return
+        if isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
             embed = discord.Embed(
                 title="Command failed",
                 description="That command could not be run.",

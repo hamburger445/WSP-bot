@@ -442,8 +442,8 @@ class Database:
 
     async def get_rank_by_name(self, guild_id: int, name: str) -> aiosqlite.Row | None:
         return await self.fetchone(
-            "SELECT * FROM ranks WHERE guild_id = ? AND name = ?",
-            (str(guild_id), name),
+            "SELECT * FROM ranks WHERE guild_id = ? AND LOWER(name) = LOWER(?)",
+            (str(guild_id), name.strip()),
         )
 
     async def set_rank_role(self, guild_id: int, name: str, role_id: int) -> None:

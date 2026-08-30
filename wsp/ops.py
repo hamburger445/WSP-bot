@@ -9,6 +9,7 @@ import discord
 from wsp.constants import COLOR_DANGER, COLOR_GOLD, COLOR_NAVY
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed
+from wsp.permissions import can_manage_rank, rank_position_for
 from wsp.utils import ensure_personnel, member_from_id, sync_duty_role, sync_rank_roles
 
 if TYPE_CHECKING:
@@ -42,12 +43,15 @@ async def change_rank(
         return "Unknown rank."
     record = await ensure_personnel(bot, member)
     from_rank = record["rank_name"]
-    from_pos = int(record["rank_position"] or 0)
+    from_pos = max(int(record["rank_position"] or 0), await rank_position_for(bot, guild.id, member))
     to_pos = int(new_rank["position"])
+    if not await can_manage_rank(bot, guild.id, actor, target_position=from_pos, new_position=to_pos):
+        return "Restricted"
     if action == "promotion" and to_pos <= from_pos:
         return f"{member.display_name} is already at or above **{rank}**."
     if action == "demotion" and to_pos >= from_pos:
         return f"{member.display_name} is already at or below **{rank}**."
+    rank = new_rank["name"]
     await bot.db.update_personnel(record["id"], rank_id=new_rank["id"])
     await bot.db.add_rank_history(
         record["id"], action, from_rank, rank, reason, str(actor.id), str(actor.id)
@@ -93,6 +97,9 @@ async def fire_member(
     note = (reason or "").strip()
     record = await ensure_personnel(bot, member)
     from_rank = record["rank_name"]
+    from_pos = max(int(record["rank_position"] or 0), await rank_position_for(bot, guild.id, member))
+    if not await can_manage_rank(bot, guild.id, actor, target_position=from_pos):
+        return "Restricted"
     await end_active_shift(bot, guild, member.id)
     await bot.db.update_personnel(record["id"], status="removed")
     await bot.db.add_rank_history(

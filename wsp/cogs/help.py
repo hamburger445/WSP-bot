@@ -9,8 +9,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import COLOR_NAVY, PermissionLevel
-from wsp.embeds import base_embed
-from wsp.permissions import resolve_level
+from wsp.embeds import base_embed, error_embed, success_embed
+from wsp.permissions import has_level, resolve_level
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -47,6 +47,7 @@ STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/loa active` — members on leave",
         "`/loa admin` — manage leave",
         "`/dashboard` — dashboard",
+        "`/say` — send a message",
     ]),
     ("Setup", "Server", [
         "`/setupserver` — set up the server",
@@ -76,6 +77,27 @@ class Help(commands.Cog):
     async def ping(self, interaction: discord.Interaction) -> None:
         ms = round(self.bot.latency * 1000)
         await interaction.response.send_message(f"Pong — **{ms} ms**")
+
+    @app_commands.command(name="say", description="Send a message.")
+    @has_level(PermissionLevel.HR)
+    @app_commands.describe(message="Message", channel="Channel")
+    async def say(
+        self,
+        interaction: discord.Interaction,
+        message: str,
+        channel: discord.TextChannel | None = None,
+    ) -> None:
+        dest = channel or interaction.channel
+        if not isinstance(dest, (discord.TextChannel, discord.Thread)):
+            await interaction.response.send_message(embed=error_embed("Unavailable"), ephemeral=True)
+            return
+        text = message.replace("@everyone", "everyone").replace("@here", "here")[:2000]
+        try:
+            await dest.send(text)
+        except discord.HTTPException:
+            await interaction.response.send_message(embed=error_embed("Could not send"), ephemeral=True)
+            return
+        await interaction.response.send_message(embed=success_embed("Sent"), ephemeral=True)
 
 
 async def _is_staff(interaction: discord.Interaction) -> bool:
