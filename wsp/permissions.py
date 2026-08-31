@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import DEFAULT_RANKS, PermissionLevel
+from wsp.utils import member_role_ids
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -31,18 +32,20 @@ class InsufficientPermission(app_commands.CheckFailure):
 
 
 async def _role_ids(bot: WSPBot, guild_id: int, user: discord.abc.User) -> set[int]:
-    if isinstance(user, discord.Member):
-        return {role.id for role in user.roles}
     guild = bot.get_guild(guild_id)
+    member: discord.Member | None = user if isinstance(user, discord.Member) else None
+    if member is None and guild is not None:
+        member = guild.get_member(user.id)
+    ids = member_role_ids(member) if member else set()
     if guild is None:
-        return set()
-    member = guild.get_member(user.id)
-    if member is None:
-        try:
-            member = await guild.fetch_member(user.id)
-        except discord.HTTPException:
-            return set()
-    return {role.id for role in member.roles}
+        return ids
+    if member is not None and len(ids) > 1:
+        return ids
+    try:
+        member = await guild.fetch_member(user.id)
+    except discord.HTTPException:
+        return ids
+    return member_role_ids(member)
 
 
 def _level_from_roles(cfg, roles: set[int]) -> PermissionLevel:

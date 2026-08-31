@@ -10,22 +10,35 @@ from wsp.constants import COLOR_DANGER, COLOR_GOLD, COLOR_NAVY
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed
 from wsp.permissions import can_manage_rank, rank_position_for
-from wsp.utils import ensure_personnel, member_from_id, sync_duty_role, sync_rank_roles
+from wsp.utils import (
+    apply_role_changes,
+    ensure_personnel,
+    fetch_live_member,
+    member_from_id,
+    member_role_ids,
+    resolve_guild_roles,
+    sync_duty_role,
+    sync_rank_roles,
+)
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
 
 
 async def strip_managed_roles(member: discord.Member, cfg, reason: str = "WSP termination") -> int:
+    live = await fetch_live_member(member.guild, member.id)
+    if live is not None:
+        member = live
     managed = cfg.all_managed_role_ids()
-    to_remove = [role for role in member.roles if role.id in managed]
+    remove_ids = [rid for rid in member_role_ids(member) if rid in managed]
+    if not remove_ids:
+        return 0
+    roles = await resolve_guild_roles(member.guild, remove_ids)
+    to_remove = [roles[rid] for rid in remove_ids if rid in roles]
     if not to_remove:
         return 0
-    try:
-        await member.remove_roles(*to_remove, reason=reason)
-    except discord.Forbidden:
-        return 0
-    return len(to_remove)
+    _added, removed = await apply_role_changes(member, add=[], remove=to_remove, reason=reason)
+    return removed
 
 
 async def change_rank(
@@ -52,12 +65,17 @@ async def change_rank(
     if action == "demotion" and to_pos >= from_pos:
         return f"{member.display_name} is already at or below **{rank}**."
     rank = new_rank["name"]
+    live = await fetch_live_member(guild, member.id)
+    if live is not None:
+        member = live
+    cfg = await bot.guild_config(guild.id)
+    role_error = await sync_rank_roles(member, rank, cfg)
+    if role_error:
+        return role_error
     await bot.db.update_personnel(record["id"], rank_id=new_rank["id"])
     await bot.db.add_rank_history(
         record["id"], action, from_rank, rank, reason, str(actor.id), str(actor.id)
     )
-    cfg = await bot.guild_config(guild.id)
-    await sync_rank_roles(member, rank, cfg)
     await bot.db.audit(
         guild.id,
         action,
@@ -100,14 +118,21 @@ async def fire_member(
     from_pos = max(int(record["rank_position"] or 0), await rank_position_for(bot, guild.id, member))
     if not await can_manage_rank(bot, guild.id, actor, target_position=from_pos):
         return "Restricted"
+    live = await fetch_live_member(guild, member.id)
+    if live is not None:
+        member = live
+    cfg = await bot.guild_config(guild.id)
+    managed = cfg.all_managed_role_ids()
+    held_managed = sum(1 for rid in member_role_ids(member) if rid in managed)
+    audit_reason = f"WSP fire: {note}"[:80] if note else "WSP fire"
+    stripped = await strip_managed_roles(member, cfg, reason=audit_reason)
+    if held_managed and stripped == 0:
+        return "Could not update roles."
     await end_active_shift(bot, guild, member.id)
     await bot.db.update_personnel(record["id"], status="removed")
     await bot.db.add_rank_history(
         record["id"], "termination", from_rank, None, note, str(actor.id), str(actor.id)
     )
-    cfg = await bot.guild_config(guild.id)
-    audit_reason = f"WSP fire: {note}"[:80] if note else "WSP fire"
-    stripped = await strip_managed_roles(member, cfg, reason=audit_reason)
     await bot.db.audit(
         guild.id,
         "personnel_fire",

@@ -96,8 +96,8 @@ class Prefix(commands.Cog):
         reason: str = "",
     ) -> None:
         message = await fire_member(self.bot, ctx.guild, member, reason, ctx.author)  # type: ignore[arg-type]
-        if message == "Restricted":
-            await ctx.send(embed=error_embed("Restricted"))
+        if message in {"Restricted", "Could not update roles."}:
+            await ctx.send(embed=error_embed(message))
             return
         await ctx.send(embed=success_embed("Member fired", message))
 
@@ -110,8 +110,8 @@ class Prefix(commands.Cog):
         action: str,
     ) -> None:
         error = await change_rank(self.bot, ctx.guild, member, rank, reason, ctx.author, action)  # type: ignore[arg-type]
-        if error == "Restricted":
-            await ctx.send(embed=error_embed("Restricted"))
+        if error in {"Restricted", "Could not update roles."}:
+            await ctx.send(embed=error_embed(error))
             return
         if error:
             await ctx.send(embed=error_embed("Invalid rank change", error))

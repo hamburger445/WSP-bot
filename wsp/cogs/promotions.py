@@ -59,8 +59,8 @@ class Promotions(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         message = await fire_member(self.bot, interaction.guild, member, reason, interaction.user)
-        if message == "Restricted":
-            await interaction.followup.send(embed=error_embed("Restricted"), ephemeral=True)
+        if message in {"Restricted", "Could not update roles."}:
+            await interaction.followup.send(embed=error_embed(message), ephemeral=True)
             return
         await interaction.followup.send(embed=success_embed("Member fired", message), ephemeral=True)
 
@@ -84,8 +84,8 @@ class Promotions(commands.Cog):
         error = await change_rank(
             self.bot, interaction.guild, member, rank, reason, interaction.user, action
         )
-        if error == "Restricted":
-            await interaction.response.send_message(embed=error_embed("Restricted"), ephemeral=True)
+        if error in {"Restricted", "Could not update roles."}:
+            await interaction.response.send_message(embed=error_embed(error), ephemeral=True)
             return
         if error:
             await interaction.response.send_message(embed=error_embed("Invalid rank change", error), ephemeral=True)

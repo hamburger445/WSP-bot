@@ -452,7 +452,9 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 fields["callsign"] = kwargs["callsign"]
             await db.update_personnel(record["id"], **fields)
             cfg = await bot.guild_config(g.id)
-            await sync_rank_roles(member, kwargs["rank"], cfg)
+            err = await sync_rank_roles(member, kwargs["rank"], cfg)
+            if err:
+                raise ValueError(err)
             return f"{member} added as {kwargs['rank']}."
 
         if member is None:
@@ -489,7 +491,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
             return f"{member} demoted to {kwargs['rank']}."
         if action == "fire":
             message = await fire_member(bot, g, member, reason, actor)
-            if message == "Restricted":
+            if message in {"Restricted", "Could not update roles."}:
                 raise ValueError(message)
             return message
         if action == "end_shift":
