@@ -32,6 +32,27 @@ if TYPE_CHECKING:
 class Prefix(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
+        self._dm_routes: dict[int, int] = {}
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        if message.author.bot or not isinstance(message.channel, discord.DMChannel):
+            return
+        owner_id = self._dm_routes.get(message.author.id)
+        if owner_id is None:
+            return
+        owner = self.bot.get_user(owner_id)
+        if owner is None:
+            try:
+                owner = await self.bot.fetch_user(owner_id)
+            except discord.HTTPException:
+                return
+        try:
+            await owner.send(
+                f"Message from {message.author} ({message.author.id}):\n{message.content[:1900] or '[no text]'}"
+            )
+        except discord.HTTPException:
+            pass
 
     async def cog_check(self, ctx: commands.Context) -> bool:
         return ctx.guild is not None
@@ -67,6 +88,29 @@ class Prefix(commands.Cog):
     async def dashboard_cmd(self, ctx: commands.Context) -> None:
         embed = await overview_embed(self.bot, ctx.guild)  # type: ignore[arg-type]
         await ctx.send(embed=embed, view=DashboardView())
+
+    @commands.command(name="dm")
+    @prefix_is_owner()
+    async def dm_cmd(self, ctx: commands.Context, user: discord.User, *, message: str) -> None:
+        """DM a user and forward their replies to the owner who started the route."""
+        if not message.strip():
+            await ctx.send(embed=error_embed("Command failed", "Include a message to send."))
+            return
+        try:
+            await user.send(message[:2000])
+        except discord.HTTPException:
+            await ctx.send(embed=error_embed("Could not send", "That user may have DMs disabled."))
+            return
+        self._dm_routes[user.id] = ctx.author.id
+        await ctx.send(embed=success_embed("Message sent", f"Replies from {user} will be sent to your DMs."))
+
+    @commands.command(name="dmstop")
+    @prefix_is_owner()
+    async def dmstop_cmd(self, ctx: commands.Context, user: discord.User) -> None:
+        if self._dm_routes.pop(user.id, None) is None:
+            await ctx.send(embed=error_embed("No active DM", f"No forwarding route exists for {user}."))
+            return
+        await ctx.send(embed=success_embed("DM forwarding stopped", f"Replies from {user} are no longer forwarded."))
 
     @commands.command(name="promote")
     @prefix_has_level(PermissionLevel.HR)
