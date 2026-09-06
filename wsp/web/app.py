@@ -203,6 +203,9 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 code,
             )
             profile = await auth.fetch_user(token["access_token"])
+        except auth.OAuthRateLimited as exc:
+            log.warning("Discord OAuth rate limit persisted; retry after %.1fs", exc.retry_after)
+            return RedirectResponse("/login?error=oauth_rate_limit", status_code=302)
         except Exception:
             log.exception("OAuth exchange failed")
             return RedirectResponse("/login?error=oauth", status_code=302)

@@ -28,7 +28,11 @@
       <p class="eyebrow">Command Center</p>
       <h2>Sign in</h2>
       {% if error %}
-        <p class="banner">Sign-in failed.</p>
+        {% if error == "oauth_rate_limit" %}
+          <p class="banner">Discord is temporarily rate limiting sign-in. Wait a moment, then try again.</p>
+        {% else %}
+          <p class="banner">Sign-in failed.</p>
+        {% endif %}
       {% endif %}
       {% if oauth_ready %}
         <a class="gold-btn" href="/auth/discord">Continue with Discord</a>
