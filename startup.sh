@@ -26,7 +26,7 @@ else
   git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$APP_DIR"
 fi
 
-if [ -f /home/container/.env ] && [ ! -f "${APP_DIR}/.env" ]; then
+if [ -f /home/container/.env ]; then
   cp /home/container/.env "${APP_DIR}/.env"
 fi
 
@@ -40,6 +40,11 @@ PYTHON_VERSION=$($PYTHON_BIN -c 'import sys; print("{}.{}".format(sys.version_in
 export PYTHONPATH="${DEPS_DIR}/lib/python${PYTHON_VERSION}/site-packages:${APP_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 export DATABASE_PATH="${DATABASE_PATH:-${DATA_DIR}/wsp.db}"
 export DATA_DIR
+
+if [ -z "${DISCORD_TOKEN:-}" ] && ! grep -q '^DISCORD_TOKEN[[:space:]]*=' "${APP_DIR}/.env" 2>/dev/null; then
+  echo "DISCORD_TOKEN is not configured. Add it to the panel environment or /home/container/.env."
+  exit 1
+fi
 
 cd "$APP_DIR"
 exec "$PYTHON_BIN" bot.py

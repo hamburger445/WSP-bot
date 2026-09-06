@@ -13,6 +13,13 @@ docker compose up -d --build
 Keep the `wsp-data` Docker volume or map it to persistent storage; it contains
 the SQLite database, backups, logs, and transcripts.
 
+The hosting panel must provide `DISCORD_TOKEN` as an environment variable, or
+place a `.env` file at `/home/container/.env` containing at least:
+
+```env
+DISCORD_TOKEN=your-new-discord-bot-token
+```
+
 Check the bot logs with:
 
 ```sh
