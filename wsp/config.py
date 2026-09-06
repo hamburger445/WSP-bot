@@ -28,21 +28,6 @@ def _env(name: str, default: str = "") -> str:
     return raw
 
 
-def _is_local_url(value: str) -> bool:
-    lower = value.lower()
-    return "127.0.0.1" in lower or "localhost" in lower or "0.0.0.0" in lower
-
-
-def env_int(name: str, default: int) -> int:
-    raw = _env(name)
-    if not raw:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
-
-
 def parse_owner_ids() -> set[int]:
     raw = _env("OWNER_IDS")
     ids: set[int] = set()
@@ -58,15 +43,9 @@ class Settings:
 
     def __init__(self) -> None:
         self.discord_token = _env("DISCORD_TOKEN")
-        self.discord_client_id = _env("DISCORD_CLIENT_ID")
-        self.discord_client_secret = _env("DISCORD_CLIENT_SECRET")
         self.owner_ids = parse_owner_ids()
         guild = _env("GUILD_ID")
         self.guild_id = int(guild) if guild.isdigit() else 0
-        self.dashboard_base_url = (_env("DASHBOARD_BASE_URL") or "http://127.0.0.1:8080").rstrip("/")
-        self.dashboard_secret = _env("DASHBOARD_SECRET_KEY", "change-me")
-        self.host = _env("HOST", "0.0.0.0")
-        self.port = env_int("PORT", 8080)
         self.database_path = Path(_env("DATABASE_PATH", "data/wsp.db"))
         if not self.database_path.is_absolute():
             self.database_path = ROOT / self.database_path
@@ -79,13 +58,6 @@ class Settings:
         self.backups_dir = self.data_dir / "backups"
         self.transcripts_dir = self.data_dir / "transcripts"
         self.logs_dir = self.data_dir / "logs"
-
-    def keep_alive_origin(self) -> str:
-        """Public HTTPS origin used to ping /health so hosts do not idle-sleep."""
-        url = self.dashboard_base_url.rstrip("/")
-        if not url or _is_local_url(url):
-            return ""
-        return url
 
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)

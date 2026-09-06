@@ -15,5 +15,4 @@ RUN mkdir -p /var/lib/wsp/data/backups /var/lib/wsp/data/transcripts /var/lib/ws
 
 VOLUME ["/var/lib/wsp/data"]
 
-EXPOSE 8080
 CMD ["python", "main.py"]

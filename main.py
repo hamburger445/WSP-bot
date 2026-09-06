@@ -1,9 +1,4 @@
-"""Combined web service + Discord bot entrypoint.
-
-Run this process as a web service (Cursor, Docker, or any host). FastAPI binds
-HOST:PORT and starts the Discord bot in the same event loop so personnel data,
-shifts, and the dashboard share one SQLite database.
-"""
+"""Discord bot entrypoint."""
 
 from __future__ import annotations
 
@@ -11,14 +6,11 @@ import asyncio
 import logging
 
 import discord
-import httpx
-import uvicorn
 
 from wsp.bot import WSPBot
 from wsp.config import Settings
 from wsp.db import Database
 from wsp.logging_setup import setup_logging
-from wsp.web.app import create_app
 
 log = logging.getLogger("wsp")
 
@@ -31,22 +23,9 @@ async def run() -> None:
     db = Database(settings.database_path, settings.backups_dir)
     await db.connect()
     bot = WSPBot(settings, db)
-    app = create_app(bot, db, settings)
-
-    config = uvicorn.Config(
-        app,
-        host=settings.host,
-        port=settings.port,
-        log_level=settings.log_level.lower(),
-        lifespan="off",
-        proxy_headers=True,
-        forwarded_allow_ips="*",
-        timeout_keep_alive=75,
-        timeout_graceful_shutdown=25,
-    )
-    server = uvicorn.Server(config)
     stop = asyncio.Event()
     shutting_down = False
+    bot_task: asyncio.Task | None = None
 
     async def shutdown() -> None:
         nonlocal shutting_down
@@ -54,7 +33,6 @@ async def run() -> None:
             return
         shutting_down = True
         stop.set()
-        server.should_exit = True
         log.info("Stop signal received — saving the database and closing Discord")
         try:
             await db.backup()
@@ -65,19 +43,15 @@ async def run() -> None:
                 await bot.close()
         except Exception:
             log.exception("Error while closing the Discord client")
-        if bot_task and not bot_task.done():
-            bot_task.cancel()
-        if keep_task and not keep_task.done():
-            keep_task.cancel()
         await db.close()
 
     async def run_discord() -> None:
         backoff = 5
-        while not stop.is_set() and not server.should_exit:
+        while not stop.is_set():
             try:
                 await bot.start(settings.discord_token, reconnect=True)
                 if not stop.is_set():
-                    log.warning("Discord session ended; the web service stays online")
+                    log.warning("Discord session ended; retrying")
                 return
             except discord.LoginFailure:
                 bot.last_error = "invalid DISCORD_TOKEN"
@@ -92,7 +66,6 @@ async def run() -> None:
                 )
                 return
             except discord.HTTPException as exc:
-                bot.note_rate_limit(exc, fallback_seconds=60, scope="Discord gateway")
                 bot.last_error = "Discord gateway temporarily rate limited or blocked"
                 try:
                     await bot.http.close()
@@ -102,41 +75,17 @@ async def run() -> None:
                 # Cloudflare 1015 blocks the host IP, so repeated retries only
                 # extend the block. Give the gateway a long cooling-off window.
                 backoff = max(backoff, 900)
-                log.warning("Discord gateway HTTP %s — retrying in %ss (web stays up)", exc.status, backoff)
+                log.warning("Discord gateway HTTP %s — retrying in %ss", exc.status, backoff)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 bot.last_error = str(exc)
                 log.exception("Discord gateway error — retrying in %ss (web stays up)", backoff)
-            if stop.is_set() or server.should_exit or bot.is_closed():
+            if stop.is_set() or bot.is_closed():
                 return
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 900)
 
-    async def keep_alive() -> None:
-        url = settings.keep_alive_origin()
-        if not url:
-            log.info("Keep-alive ping skipped (no public URL). Set DASHBOARD_BASE_URL to enable it.")
-            return
-        await asyncio.sleep(20)
-        log.info("Keep-alive pinging %s/health every 8 minutes so the host does not idle-sleep", url)
-        while not stop.is_set() and not server.should_exit:
-            try:
-                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                    response = await client.get(f"{url}/health")
-                if response.status_code >= 400:
-                    log.warning("Keep-alive ping returned HTTP %s", response.status_code)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.warning("Keep-alive ping failed; will retry")
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=480)
-            except asyncio.TimeoutError:
-                pass
-
-    bot_task: asyncio.Task | None = None
-    keep_task = asyncio.create_task(keep_alive(), name="wsp-keepalive")
     if settings.discord_token:
         log.info(
             "Discord token loaded (%s chars). Guild ID=%s. Starting bot…",
@@ -145,20 +94,15 @@ async def run() -> None:
         )
         bot_task = asyncio.create_task(run_discord(), name="wsp-discord")
     else:
-        bot.last_error = "DISCORD_TOKEN is empty"
-        log.warning("DISCORD_TOKEN is empty — web dashboard will run without the Discord bot.")
+        log.error("DISCORD_TOKEN is empty — the bot cannot start.")
+        await db.close()
+        return
 
     try:
-        await server.serve()
+        await bot_task
     finally:
+        stop.set()
         await shutdown()
-        for task in (bot_task, keep_task):
-            if not task:
-                continue
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
 
 
 def main() -> None:
