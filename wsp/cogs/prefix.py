@@ -378,6 +378,7 @@ class Prefix(commands.Cog):
         await ctx.send(embed=base_embed("Config", "View or change settings."))
 
     @commands.command(name="sync")
+    @commands.cooldown(1, 60.0, commands.BucketType.user)
     @prefix_is_owner()
     async def sync_cmd(self, ctx: commands.Context) -> None:
         if ctx.guild:

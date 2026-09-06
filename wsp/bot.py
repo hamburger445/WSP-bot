@@ -45,6 +45,7 @@ class WSPBot(commands.Bot):
         self.last_error: str | None = None
         self.synced_commands: list[str] = []
         self._synced = False
+        self._ready_initialized = False
 
     async def setup_hook(self) -> None:
         from wsp.views.shifts import ShiftActionView, ShiftMenuView
@@ -111,6 +112,8 @@ class WSPBot(commands.Bot):
     async def on_ready(self) -> None:
         log.info("Logged in as %s (%s) in %s guild(s)", self.user, self.user.id if self.user else "?", len(self.guilds))
         self.last_error = None
+        if self._ready_initialized:
+            return
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
@@ -136,6 +139,7 @@ class WSPBot(commands.Bot):
             except Exception as exc:
                 self.last_error = f"command sync failed: {exc}"
                 log.exception("Command sync failed")
+            self._ready_initialized = True
 
     async def guild_config(self, guild_id: int) -> GuildConfig:
         if guild_id in self._config_cache:

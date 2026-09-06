@@ -184,6 +184,7 @@ class Setup(commands.Cog):
         await interaction.response.send_message(embed=success_embed("Setting saved"), ephemeral=True)
 
     @app_commands.command(name="sync", description="Sync commands.")
+    @app_commands.checks.cooldown(1, 60.0)
     @is_owner()
     async def sync(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
