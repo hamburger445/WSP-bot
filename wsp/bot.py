@@ -50,7 +50,13 @@ class WSPBot(commands.Bot):
         self._rate_limit_until = 0.0
         self._rate_limit_scope = ""
 
-    def note_rate_limit(self, error: discord.HTTPException) -> None:
+    def note_rate_limit(
+        self,
+        error: discord.HTTPException,
+        *,
+        fallback_seconds: float = 0,
+        scope: str = "Discord API",
+    ) -> None:
         """Record Discord's retry window for the dashboard status indicator."""
         if getattr(error, "status", None) != 429:
             return
@@ -61,9 +67,10 @@ class WSPBot(commands.Bot):
                 retry_after = float(headers.get("Retry-After", 0))
             except (TypeError, ValueError):
                 retry_after = 0
-        if retry_after and retry_after > 0:
+        retry_after = max(float(retry_after or 0), fallback_seconds)
+        if retry_after > 0:
             self._rate_limit_until = max(self._rate_limit_until, time.monotonic() + retry_after)
-            self._rate_limit_scope = "Discord API"
+            self._rate_limit_scope = scope
 
     def rate_limit_status(self) -> dict[str, object]:
         remaining = max(0, int(self._rate_limit_until - time.monotonic() + 0.999))

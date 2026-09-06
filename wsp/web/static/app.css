@@ -144,6 +144,11 @@ nav { display: flex; flex-direction: column; gap: 2px; }
   background: var(--warn);
   box-shadow: 0 0 0 3px rgba(224, 162, 75, 0.14);
 }
+.rate-status.gateway { color: #f0a7a9; }
+.rate-status.gateway .rate-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(226, 59, 66, 0.14);
+}
 
 .stage {
   padding: 28px 40px 72px;

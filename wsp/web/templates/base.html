@@ -130,8 +130,9 @@
           const limit = data.rate_limit || {};
           const seconds = Number(limit.seconds || 0);
           rateStatus.classList.toggle("active", seconds > 0);
+          rateStatus.classList.toggle("gateway", limit.scope === "Discord gateway");
           label.textContent = seconds > 0
-            ? `Rate limit: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
+            ? `${limit.scope === "Discord gateway" ? "Discord gateway blocked" : "Rate limit"}: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
             : "Rate limit clear";
         } catch (_) {
           label.textContent = "Rate status unavailable";

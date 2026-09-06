@@ -115,6 +115,16 @@ async def run() -> None:
                     "Enable SERVER MEMBERS INTENT in Discord Developer Portal → Bot → Privileged Gateway Intents."
                 )
                 return
+            except discord.HTTPException as exc:
+                bot.note_rate_limit(exc, fallback_seconds=60, scope="Discord gateway")
+                bot.last_error = "Discord gateway temporarily rate limited or blocked"
+                try:
+                    await bot.http.close()
+                    bot.http.clear()
+                except Exception:
+                    log.exception("Could not close the Discord HTTP session after gateway failure")
+                backoff = max(backoff, 60)
+                log.warning("Discord gateway HTTP %s — retrying in %ss (web stays up)", exc.status, backoff)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -123,7 +133,7 @@ async def run() -> None:
             if stop.is_set() or server.should_exit or bot.is_closed():
                 return
             await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+            backoff = min(backoff * 2, 300)
 
     async def keep_alive() -> None:
         url = settings.keep_alive_origin()
