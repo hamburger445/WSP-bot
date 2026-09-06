@@ -30,6 +30,36 @@ if TYPE_CHECKING:
     from wsp.bot import WSPBot
 
 
+class DMModal(discord.ui.Modal, title="Send a direct message"):
+    message = discord.ui.TextInput(
+        label="Message",
+        placeholder="Type the message to send...",
+        style=discord.TextStyle.paragraph,
+        max_length=2000,
+        required=True,
+    )
+
+    def __init__(self, cog: "Prefix", user: discord.User, owner_id: int) -> None:
+        super().__init__()
+        self.cog = cog
+        self.user = user
+        self.owner_id = owner_id
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        message = _format_dm_message(str(self.message))
+        try:
+            await self.user.send(message)
+        except discord.HTTPException:
+            await interaction.response.send_message(
+                "Could not send the DM. That user may have DMs disabled.", ephemeral=True
+            )
+            return
+        self.cog._dm_routes[self.user.id] = self.owner_id
+        await interaction.response.send_message(
+            f"Message sent to {self.user}. Their replies will be forwarded to your DMs.", ephemeral=True
+        )
+
+
 class Prefix(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
@@ -106,24 +136,10 @@ class Prefix(commands.Cog):
         self._dm_routes[user.id] = ctx.author.id
         await ctx.send(embed=success_embed("Message sent", f"Replies from {user} will be sent to your DMs."))
 
-    @app_commands.command(name="dm", description="DM a user and forward their replies to you.")
+    @app_commands.command(name="dm", description="Open a form to DM a user and forward their replies to you.")
     @is_owner()
-    async def dm_slash(self, interaction: discord.Interaction, user: discord.User, message: str) -> None:
-        message = _format_dm_message(message)
-        if not message.strip():
-            await interaction.response.send_message("Include a message to send.", ephemeral=True)
-            return
-        try:
-            await user.send(message[:2000])
-        except discord.HTTPException:
-            await interaction.response.send_message(
-                "Could not send the DM. That user may have DMs disabled.", ephemeral=True
-            )
-            return
-        self._dm_routes[user.id] = interaction.user.id
-        await interaction.response.send_message(
-            f"Message sent to {user}. Their replies will be forwarded to your DMs.", ephemeral=True
-        )
+    async def dm_slash(self, interaction: discord.Interaction, user: discord.User) -> None:
+        await interaction.response.send_modal(DMModal(self, user, interaction.user.id))
 
     @commands.command(name="dmstop")
     @prefix_is_owner()
