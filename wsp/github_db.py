@@ -76,35 +76,38 @@ class GitHubDatabase:
         async with self._lock:
             try:
                 snapshot = await db.snapshot_bytes()
+                if not snapshot:
+                    return False
+                await self._ensure_branch()
+                remote = await self._get_file()
+                remote_sha = remote.get("sha") if remote else None
+                if remote:
+                    remote_bytes = await self._download_bytes(remote)
+                    if remote_bytes and hashlib.sha256(remote_bytes).digest() == hashlib.sha256(snapshot).digest():
+                        log.debug("GitHub database already matches local snapshot")
+                        return True
+                body = {
+                    "message": "Sync WSP database (shifts, setup, personnel)",
+                    "content": base64.b64encode(snapshot).decode("ascii"),
+                    "branch": self.settings.github_db_branch,
+                }
+                if remote_sha:
+                    body["sha"] = remote_sha
+                async with httpx.AsyncClient(timeout=60) as client:
+                    response = await client.put(self._contents_url(), headers=self._headers(), json=body)
+                if response.status_code in {200, 201}:
+                    data = response.json()
+                    self._last_sha = (data.get("content") or {}).get("sha") or remote_sha
+                    log.info("Pushed database to GitHub %s@%s (%s bytes)", self.settings.github_repo, self.settings.github_db_branch, len(snapshot))
+                    return True
+                log.error("GitHub database push failed (%s): %s", response.status_code, response.text[:500])
+                return False
+            except (httpx.HTTPError, OSError, KeyError, ValueError) as exc:
+                log.warning("GitHub database sync unavailable: %s", exc)
+                return False
             except Exception:
                 log.exception("Could not snapshot the database for GitHub")
                 return False
-            if not snapshot:
-                return False
-            await self._ensure_branch()
-            remote = await self._get_file()
-            remote_sha = remote.get("sha") if remote else None
-            if remote:
-                remote_bytes = await self._download_bytes(remote)
-                if remote_bytes and hashlib.sha256(remote_bytes).digest() == hashlib.sha256(snapshot).digest():
-                    log.debug("GitHub database already matches local snapshot")
-                    return True
-            body = {
-                "message": "Sync WSP database (shifts, setup, personnel)",
-                "content": base64.b64encode(snapshot).decode("ascii"),
-                "branch": self.settings.github_db_branch,
-            }
-            if remote_sha:
-                body["sha"] = remote_sha
-            async with httpx.AsyncClient(timeout=60) as client:
-                response = await client.put(self._contents_url(), headers=self._headers(), json=body)
-            if response.status_code in {200, 201}:
-                data = response.json()
-                self._last_sha = (data.get("content") or {}).get("sha") or remote_sha
-                log.info("Pushed database to GitHub %s@%s (%s bytes)", self.settings.github_repo, self.settings.github_db_branch, len(snapshot))
-                return True
-            log.error("GitHub database push failed (%s): %s", response.status_code, response.text[:500])
-            return False
 
     def schedule_push(self, db: Database) -> None:
         if not self.enabled:
