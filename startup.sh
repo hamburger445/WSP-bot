@@ -7,6 +7,13 @@ APP_DIR="${APP_DIR:-/home/container/WSP-bot}"
 DATA_DIR="${DATA_DIR:-/home/container/data}"
 DEPS_DIR="${DEPS_DIR:-/home/container/.local}"
 
+case "$APP_DIR" in
+  /home/container|/home/container/)
+    echo "APP_DIR must be a subdirectory, not /home/container"
+    exit 1
+    ;;
+esac
+
 echo "Updating bot source from ${REPO_URL} (${REPO_BRANCH})"
 mkdir -p "$(dirname "$APP_DIR")" "$DATA_DIR" "$DEPS_DIR"
 

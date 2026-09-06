@@ -21,11 +21,18 @@ docker compose logs -f wsp-bot
 
 ## Panel Startup Command
 
-For a panel that starts from `/home/container`, set the startup command to this
-single line. Do not paste the script contents into the panel command field:
+If `startup.sh` has been uploaded to `/home/container`, set the startup command
+to this single line:
 
 ```sh
 /bin/sh /home/container/startup.sh
+```
+
+If the panel does not have that file yet, use this command instead. It downloads
+the script from GitHub first, so it does not require a local startup file:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/hamburger445/WSP-bot/main/startup.sh | /bin/sh
 ```
 
 Set `REPO_URL`, `REPO_BRANCH`, and `PYTHON_BIN` as environment variables when
