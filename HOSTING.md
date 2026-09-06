@@ -18,3 +18,15 @@ Check the bot logs with:
 ```sh
 docker compose logs -f wsp-bot
 ```
+
+## Panel Startup Command
+
+For a panel that starts from `/home/container`, use:
+
+```sh
+bash /home/container/startup.sh
+```
+
+Set `REPO_URL`, `REPO_BRANCH`, and `PYTHON_BIN` as environment variables when
+needed. For a private repository, configure the panel's Git credentials rather
+than putting a token in the startup command.
