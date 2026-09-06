@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import PermissionLevel
@@ -13,7 +14,7 @@ from wsp.cogs.help import HelpView, _catalog_embed
 from wsp.cogs.quota import Quota
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.ops import change_rank, fire_member
-from wsp.permissions import prefix_has_level, prefix_is_owner, resolve_user_level
+from wsp.permissions import is_owner, prefix_has_level, prefix_is_owner, resolve_user_level
 from wsp.utils import current_shift_seconds, hms_to_seconds, member_can_start_shift, mention_or_id, quota_required_minutes, sync_duty_role
 from wsp.views.shifts import (
     ShiftActionView,
@@ -104,6 +105,24 @@ class Prefix(commands.Cog):
         self._dm_routes[user.id] = ctx.author.id
         await ctx.send(embed=success_embed("Message sent", f"Replies from {user} will be sent to your DMs."))
 
+    @app_commands.command(name="dm", description="DM a user and forward their replies to you.")
+    @is_owner()
+    async def dm_slash(self, interaction: discord.Interaction, user: discord.User, message: str) -> None:
+        if not message.strip():
+            await interaction.response.send_message("Include a message to send.", ephemeral=True)
+            return
+        try:
+            await user.send(message[:2000])
+        except discord.HTTPException:
+            await interaction.response.send_message(
+                "Could not send the DM. That user may have DMs disabled.", ephemeral=True
+            )
+            return
+        self._dm_routes[user.id] = interaction.user.id
+        await interaction.response.send_message(
+            f"Message sent to {user}. Their replies will be forwarded to your DMs.", ephemeral=True
+        )
+
     @commands.command(name="dmstop")
     @prefix_is_owner()
     async def dmstop_cmd(self, ctx: commands.Context, user: discord.User) -> None:
@@ -111,6 +130,14 @@ class Prefix(commands.Cog):
             await ctx.send(embed=error_embed("No active DM", f"No forwarding route exists for {user}."))
             return
         await ctx.send(embed=success_embed("DM forwarding stopped", f"Replies from {user} are no longer forwarded."))
+
+    @app_commands.command(name="dmstop", description="Stop forwarding a user's DM replies to you.")
+    @is_owner()
+    async def dmstop_slash(self, interaction: discord.Interaction, user: discord.User) -> None:
+        if self._dm_routes.pop(user.id, None) is None:
+            await interaction.response.send_message(f"No active DM route exists for {user}.", ephemeral=True)
+            return
+        await interaction.response.send_message(f"DM forwarding stopped for {user}.", ephemeral=True)
 
     @commands.command(name="promote")
     @prefix_has_level(PermissionLevel.HR)
