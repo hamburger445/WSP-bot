@@ -124,6 +124,26 @@ nav { display: flex; flex-direction: column; gap: 2px; }
   background: var(--ok);
   box-shadow: 0 0 0 4px rgba(61, 186, 122, 0.14);
 }
+.rate-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.rate-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(61, 186, 122, 0.12);
+}
+.rate-status.active { color: #f0c56d; }
+.rate-status.active .rate-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px rgba(224, 162, 75, 0.14);
+}
 
 .stage {
   padding: 28px 40px 72px;

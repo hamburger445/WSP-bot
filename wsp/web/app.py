@@ -159,6 +159,7 @@ def create_app(bot: WSPBot, db: Database, settings: Settings) -> FastAPI:
                 "guild_id": settings.guild_id or None,
                 "commands": getattr(bot, "synced_commands", []),
                 "bot_error": getattr(bot, "last_error", None),
+                "rate_limit": bot.rate_limit_status(),
             }
         )
 

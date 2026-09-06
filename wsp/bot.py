@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import traceback
 
 import discord
@@ -46,6 +47,29 @@ class WSPBot(commands.Bot):
         self.synced_commands: list[str] = []
         self._synced = False
         self._ready_initialized = False
+        self._rate_limit_until = 0.0
+        self._rate_limit_scope = ""
+
+    def note_rate_limit(self, error: discord.HTTPException) -> None:
+        """Record Discord's retry window for the dashboard status indicator."""
+        if getattr(error, "status", None) != 429:
+            return
+        retry_after = getattr(error, "retry_after", None)
+        if retry_after is None:
+            headers = getattr(getattr(error, "response", None), "headers", {})
+            try:
+                retry_after = float(headers.get("Retry-After", 0))
+            except (TypeError, ValueError):
+                retry_after = 0
+        if retry_after and retry_after > 0:
+            self._rate_limit_until = max(self._rate_limit_until, time.monotonic() + retry_after)
+            self._rate_limit_scope = "Discord API"
+
+    def rate_limit_status(self) -> dict[str, object]:
+        remaining = max(0, int(self._rate_limit_until - time.monotonic() + 0.999))
+        if remaining == 0:
+            self._rate_limit_scope = ""
+        return {"active": remaining > 0, "seconds": remaining, "scope": self._rate_limit_scope}
 
     async def setup_hook(self) -> None:
         from wsp.views.shifts import ShiftActionView, ShiftMenuView
@@ -180,6 +204,7 @@ class WSPBot(commands.Bot):
             try:
                 return await channel.send(embed=embed, view=view)
             except discord.HTTPException as exc:
+                self.note_rate_limit(exc)
                 log.warning("Failed to send notification to %s: %s", channel_key, exc)
         return None
 
@@ -194,7 +219,8 @@ class WSPBot(commands.Bot):
         try:
             await user.send(embed=embed, view=view)
             return True
-        except discord.HTTPException:
+        except discord.HTTPException as exc:
+            self.note_rate_limit(exc)
             return False
 
     async def fetch_guild_user(self, guild: discord.Guild | None, user_id: int) -> discord.abc.User | None:
@@ -204,17 +230,21 @@ class WSPBot(commands.Bot):
                 return member
             try:
                 return await guild.fetch_member(user_id)
-            except discord.HTTPException:
+            except discord.HTTPException as exc:
+                self.note_rate_limit(exc)
                 pass
         try:
             return await self.fetch_user(user_id)
-        except discord.HTTPException:
+        except discord.HTTPException as exc:
+            self.note_rate_limit(exc)
             return None
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         from discord import app_commands
 
         orig = error.original if isinstance(error, app_commands.CommandInvokeError) else error
+        if isinstance(orig, discord.HTTPException):
+            self.note_rate_limit(orig)
         if isinstance(orig, InsufficientPermission) or isinstance(error, InsufficientPermission):
             embed = discord.Embed(
                 title="Restricted",
@@ -266,6 +296,8 @@ class WSPBot(commands.Bot):
         if isinstance(error, commands.CommandNotFound):
             return
         orig = error.original if isinstance(error, commands.CommandInvokeError) else error
+        if isinstance(orig, discord.HTTPException):
+            self.note_rate_limit(orig)
         if isinstance(error, commands.CheckFailure):
             embed = discord.Embed(
                 title="Restricted",
