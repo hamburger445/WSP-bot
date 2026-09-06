@@ -79,7 +79,10 @@ class Settings:
             self.database_path = ROOT / self.database_path
         self.timezone = _env("TIMEZONE", "America/Chicago")
         self.log_level = _env("LOG_LEVEL", "INFO").upper()
-        self.data_dir = ROOT / "data"
+        configured_data_dir = _env("DATA_DIR")
+        self.data_dir = Path(configured_data_dir) if configured_data_dir else self.database_path.parent
+        if not self.data_dir.is_absolute():
+            self.data_dir = ROOT / self.data_dir
         self.backups_dir = self.data_dir / "backups"
         self.transcripts_dir = self.data_dir / "transcripts"
         self.logs_dir = self.data_dir / "logs"

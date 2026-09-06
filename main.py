@@ -36,9 +36,7 @@ async def run() -> None:
             settings.github_repo,
             settings.github_db_branch,
         )
-    # Restore must finish before db.connect() so an empty disk can load GitHub
-    # data, but it cannot block the HTTP port. Render SIGTERMs a process that
-    # has not bound PORT yet — that was logging "Shutting down" in a loop.
+    # Restore must finish before db.connect() so an empty disk can load GitHub data.
     try:
         await asyncio.wait_for(github_db.restore(settings.database_path), timeout=12)
     except asyncio.TimeoutError:
@@ -106,7 +104,7 @@ async def run() -> None:
             except discord.LoginFailure:
                 bot.last_error = "invalid DISCORD_TOKEN"
                 log.exception(
-                    "Discord rejected the bot token. Reset it in the Developer Portal and update the Render env var."
+                    "Discord rejected the bot token. Reset it in the Developer Portal and update DISCORD_TOKEN."
                 )
                 return
             except discord.PrivilegedIntentsRequired:
@@ -123,7 +121,9 @@ async def run() -> None:
                     bot.http.clear()
                 except Exception:
                     log.exception("Could not close the Discord HTTP session after gateway failure")
-                backoff = max(backoff, 60)
+                # Cloudflare 1015 blocks the host IP, so repeated retries only
+                # extend the block. Give the gateway a long cooling-off window.
+                backoff = max(backoff, 900)
                 log.warning("Discord gateway HTTP %s — retrying in %ss (web stays up)", exc.status, backoff)
             except asyncio.CancelledError:
                 raise
@@ -133,12 +133,12 @@ async def run() -> None:
             if stop.is_set() or server.should_exit or bot.is_closed():
                 return
             await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 300)
+            backoff = min(backoff * 2, 900)
 
     async def keep_alive() -> None:
         url = settings.keep_alive_origin()
         if not url:
-            log.info("Keep-alive ping skipped (no public URL). Set DASHBOARD_BASE_URL on Render for 24/7.")
+            log.info("Keep-alive ping skipped (no public URL). Set DASHBOARD_BASE_URL to enable it.")
             return
         await asyncio.sleep(20)
         log.info("Keep-alive pinging %s/health every 8 minutes so the host does not idle-sleep", url)
