@@ -94,6 +94,7 @@ class Prefix(commands.Cog):
     @prefix_is_owner()
     async def dm_cmd(self, ctx: commands.Context, user: discord.User, *, message: str) -> None:
         """DM a user and forward their replies to the owner who started the route."""
+        message = _format_dm_message(message)
         if not message.strip():
             await ctx.send(embed=error_embed("Command failed", "Include a message to send."))
             return
@@ -108,6 +109,7 @@ class Prefix(commands.Cog):
     @app_commands.command(name="dm", description="DM a user and forward their replies to you.")
     @is_owner()
     async def dm_slash(self, interaction: discord.Interaction, user: discord.User, message: str) -> None:
+        message = _format_dm_message(message)
         if not message.strip():
             await interaction.response.send_message("Include a message to send.", ephemeral=True)
             return
@@ -458,6 +460,11 @@ class Prefix(commands.Cog):
         else:
             synced = await self.bot.tree.sync()
         await ctx.send(embed=success_embed("Commands synced", f"{len(synced)} commands published."))
+
+
+def _format_dm_message(message: str) -> str:
+    """Turn pasted literal newline escapes into Discord line breaks."""
+    return message.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
 
 
 async def _split_rank_reason(bot: WSPBot, guild_id: int, rest: str) -> tuple[str | None, str]:
