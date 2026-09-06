@@ -41,7 +41,6 @@ class WSPBot(commands.Bot):
         super().__init__(command_prefix="?", intents=intents, help_command=None, case_insensitive=True)
         self.settings = settings
         self.db = db
-        self.github_db = None
         self._config_cache: dict[int, GuildConfig] = {}
         self.last_error: str | None = None
         self.synced_commands: list[str] = []
@@ -186,9 +185,6 @@ class WSPBot(commands.Bot):
     async def save_config(self, guild_id: int, cfg: GuildConfig) -> None:
         await self.db.save_guild_config(guild_id, cfg)
         self._config_cache[guild_id] = cfg
-        github_db = self.github_db
-        if github_db is not None and github_db.enabled:
-            github_db.schedule_push(self.db)
 
     def invalidate_config(self, guild_id: int) -> None:
         self._config_cache.pop(guild_id, None)
