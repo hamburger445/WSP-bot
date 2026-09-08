@@ -15,9 +15,8 @@ from wsp.cogs.quota import Quota
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.ops import change_rank, fire_member
 from wsp.permissions import is_owner, prefix_has_level, prefix_is_owner, resolve_user_level
-from wsp.utils import current_shift_seconds, hms_to_seconds, member_can_start_shift, mention_or_id, quota_required_minutes, sync_duty_role
+from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, quota_required_minutes, sync_duty_role
 from wsp.views.shifts import (
-    ShiftActionView,
     ShiftMenuView,
     begin_shift,
     build_duty_board,
@@ -210,7 +209,7 @@ class Prefix(commands.Cog):
 
     @commands.group(name="shift", invoke_without_command=True)
     async def shift_grp(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=base_embed("Shift", "Start, pause, resume, or end a shift."))
+        await ctx.send(embed=base_embed("Shift", "View your current shift status."))
 
     @shift_grp.command(name="menu")
     async def shift_menu(self, ctx: commands.Context) -> None:
@@ -218,10 +217,8 @@ class Prefix(commands.Cog):
             return
         row = await self.bot.db.active_shift(ctx.guild.id, ctx.author.id)
         status = row["status"] if row else None
-        cfg = await self.bot.guild_config(ctx.guild.id)
         await ctx.send(
             embed=await build_shift_controls(status),
-            view=ShiftActionView(status, can_start=member_can_start_shift(ctx.author, cfg)),
         )
 
     @shift_grp.command(name="data")
