@@ -348,10 +348,11 @@ class Shifts(commands.Cog):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
+        await interaction.response.defer()
         rows = await self.bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=100)
         active = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
         cfg = await self.bot.guild_config(interaction.guild.id)
-        await interaction.response.send_message(
+        await interaction.edit_original_response(
             embed=build_shift_management_embed(interaction.user, rows),
             view=ShiftActionView(
                 active["status"] if active else None,
