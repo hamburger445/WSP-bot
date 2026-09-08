@@ -31,7 +31,7 @@ def admin_shift_embed(member: discord.Member, rows) -> discord.Embed:
     total_seconds = sum(int(row["duration_seconds"] or 0) for row in completed)
     average = total_seconds // len(completed) if completed else 0
     shift_type = next((row["rank_name"] for row in rows if row["rank_name"]), None) or "Trooper"
-    embed = base_embed("Shift Management", f"{member.mention}")
+    embed = base_embed(f"Shift Management: {member}", "")
     embed.add_field(
         name="All Time Information",
         value=(
@@ -106,6 +106,21 @@ class AdminShiftView(discord.ui.View):
         self.rows = rows
         self.selected_shift_id: int | None = None
         active = next((row for row in rows if row["status"] in {"active", "paused"}), None)
+        self.action_select = discord.ui.Select(
+            placeholder="Shift Actions",
+            options=[
+                discord.SelectOption(label="Start shift", value="start"),
+                discord.SelectOption(label="Pause shift", value="pause"),
+                discord.SelectOption(label="Resume shift", value="resume"),
+                discord.SelectOption(label="End shift", value="end"),
+                discord.SelectOption(label="Edit selected shift", value="edit"),
+                discord.SelectOption(label="Delete selected shift", value="delete"),
+                discord.SelectOption(label="View all shifts", value="history"),
+            ],
+            row=0,
+        )
+        self.action_select.callback = self.select_action
+        self.add_item(self.action_select)
         options = [
             discord.SelectOption(
                 label=f"Shift #{row['id']} - {row['status']}",
@@ -114,13 +129,67 @@ class AdminShiftView(discord.ui.View):
             )
             for row in rows[:25]
         ]
-        self.shift_select = discord.ui.Select(placeholder="Pick a shift to edit", options=options or [discord.SelectOption(label="No shifts", value="none")])
+        self.shift_select = discord.ui.Select(
+            placeholder="Pick a shift to edit or delete",
+            options=options or [discord.SelectOption(label="No shifts", value="none")],
+            row=1,
+        )
         self.shift_select.callback = self.select_shift
         self.add_item(self.shift_select)
         self.start.disabled = active is not None
         self.pause.disabled = active is None or active["status"] != "active"
         self.resume.disabled = active is None or active["status"] != "paused"
         self.end.disabled = active is None
+
+    async def select_action(self, interaction: discord.Interaction) -> None:
+        if not await self.guard(interaction):
+            return
+        await self.perform_action(interaction, self.action_select.values[0])
+
+    async def perform_action(self, interaction: discord.Interaction, action: str) -> None:
+        if action == "start":
+            result = await begin_shift(self.bot, interaction.guild, self.member, interaction.user)
+            await _admin_reply(interaction, result)
+            if not result.error:
+                await self.refresh_buttons(interaction)
+            return
+        if action == "end":
+            result = await complete_shift(self.bot, interaction.guild, self.member, interaction.user)
+            await _admin_reply(interaction, result)
+            if not result.error:
+                await self.refresh_buttons(interaction)
+            return
+        if action == "pause":
+            row = await self.bot.db.active_shift(interaction.guild.id, self.member.id)
+            if not row or row["status"] != "active":
+                await interaction.response.send_message(embed=error_embed("Cannot pause", "The user has no active shift."), ephemeral=True)
+                return
+            await self.bot.db.update_shift(row["id"], status="paused", pause_started=now_ts())
+            await sync_duty_role(self.member, await self.bot.guild_config(interaction.guild.id), False)
+            await interaction.response.send_message(embed=success_embed("Shift paused"), ephemeral=True)
+            await self.refresh_buttons(interaction)
+            return
+        if action == "resume":
+            row = await self.bot.db.active_shift(interaction.guild.id, self.member.id)
+            if not row or row["status"] != "paused":
+                await interaction.response.send_message(embed=error_embed("Cannot resume", "The user has no paused shift."), ephemeral=True)
+                return
+            extra = max(0, now_ts() - int(row["pause_started"] or now_ts()))
+            await self.bot.db.update_shift(row["id"], status="active", pause_started=None, paused_seconds=int(row["paused_seconds"] or 0) + extra)
+            await sync_duty_role(self.member, await self.bot.guild_config(interaction.guild.id), True)
+            await interaction.response.send_message(embed=success_embed("Shift resumed"), ephemeral=True)
+            await self.refresh_buttons(interaction)
+            return
+        if action == "edit":
+            if self.selected_shift_id is None:
+                await interaction.response.send_message("Pick a shift first.", ephemeral=True)
+            else:
+                await interaction.response.send_modal(AdminShiftEditModal(self))
+            return
+        if action == "delete":
+            await self.delete_selected(interaction)
+            return
+        await self.show_history(interaction)
 
     async def guard(self, interaction: discord.Interaction) -> bool:
         if not interaction.guild or await resolve_level(interaction) < PermissionLevel.SUPERVISOR:
@@ -150,7 +219,16 @@ class AdminShiftView(discord.ui.View):
         self.selected_shift_id = int(value)
         await interaction.response.send_message(f"Selected shift #{value}.", ephemeral=True)
 
-    @discord.ui.button(label="Start shift", style=discord.ButtonStyle.success, row=1)
+    async def show_history(self, interaction: discord.Interaction) -> None:
+        rows = await self.bot.db.list_shifts(interaction.guild.id, self.member.id, limit=25)
+        embed = base_embed(f"All shifts • {self.member}")
+        embed.description = "\n".join(
+            f"`#{row['id']}` {row['status']} • {format_duration(row['duration_seconds'] or current_shift_seconds(row))} • {ts(row['start_time'])}"
+            for row in rows
+        ) or "No records."
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Start shift", style=discord.ButtonStyle.success, row=2)
     async def start(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.guard(interaction):
             return
@@ -159,7 +237,7 @@ class AdminShiftView(discord.ui.View):
         if not result.error:
             await self.refresh_buttons(interaction)
 
-    @discord.ui.button(label="Pause", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Pause", style=discord.ButtonStyle.secondary, row=2)
     async def pause(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.guard(interaction):
             return
@@ -172,7 +250,7 @@ class AdminShiftView(discord.ui.View):
         await interaction.response.send_message(embed=success_embed("Shift paused"), ephemeral=True)
         await self.refresh_buttons(interaction)
 
-    @discord.ui.button(label="Resume", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="Resume", style=discord.ButtonStyle.primary, row=2)
     async def resume(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.guard(interaction):
             return
@@ -188,7 +266,7 @@ class AdminShiftView(discord.ui.View):
         await interaction.response.send_message(embed=success_embed("Shift resumed"), ephemeral=True)
         await self.refresh_buttons(interaction)
 
-    @discord.ui.button(label="End shift", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(label="End shift", style=discord.ButtonStyle.danger, row=2)
     async def end(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.guard(interaction):
             return
@@ -197,7 +275,7 @@ class AdminShiftView(discord.ui.View):
         if not result.error:
             await self.refresh_buttons(interaction)
 
-    @discord.ui.button(label="Most recent", style=discord.ButtonStyle.primary, row=2)
+    @discord.ui.button(label="Most recent", style=discord.ButtonStyle.primary, row=3)
     async def recent(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.guard(interaction):
             return
@@ -207,7 +285,7 @@ class AdminShiftView(discord.ui.View):
         self.selected_shift_id = int(self.rows[0]["id"])
         await interaction.response.send_message(f"Selected most recent shift #{self.selected_shift_id}.", ephemeral=True)
 
-    @discord.ui.button(label="Edit selected", style=discord.ButtonStyle.primary, row=2)
+    @discord.ui.button(label="Edit selected", style=discord.ButtonStyle.primary, row=3)
     async def edit(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.guard(interaction):
             return
@@ -216,22 +294,19 @@ class AdminShiftView(discord.ui.View):
             return
         await interaction.response.send_modal(AdminShiftEditModal(self))
 
-    @discord.ui.button(label="View all shifts", style=discord.ButtonStyle.secondary, row=2)
+    @discord.ui.button(label="View all shifts", style=discord.ButtonStyle.secondary, row=3)
     async def history(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.guard(interaction):
             return
-        rows = await self.bot.db.list_shifts(interaction.guild.id, self.member.id, limit=25)
-        embed = base_embed(f"All shifts • {self.member}")
-        embed.description = "\n".join(
-            f"`#{row['id']}` {row['status']} • {format_duration(row['duration_seconds'] or current_shift_seconds(row))} • {ts(row['start_time'])}"
-            for row in rows
-        ) or "No records."
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await self.show_history(interaction)
 
-    @discord.ui.button(label="Delete selected", style=discord.ButtonStyle.danger, row=3)
+    @discord.ui.button(label="Delete selected", style=discord.ButtonStyle.danger, row=4)
     async def delete(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.guard(interaction):
             return
+        await self.delete_selected(interaction)
+
+    async def delete_selected(self, interaction: discord.Interaction) -> None:
         if self.selected_shift_id is None:
             await interaction.response.send_message("Pick a shift or choose Most recent first.", ephemeral=True)
             return
