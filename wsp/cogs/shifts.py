@@ -354,7 +354,10 @@ class Shifts(commands.Cog):
             return
         if not interaction.response.is_done():
             try:
-                await interaction.response.defer(thinking=True)
+                await interaction.response.send_message(
+                    embed=base_embed("Shift Management", "Loading shift information..."),
+                    ephemeral=True,
+                )
             except discord.NotFound as exc:
                 if getattr(exc, "code", None) == 10062:
                     log.warning("/shift menu interaction expired before acknowledgement")
