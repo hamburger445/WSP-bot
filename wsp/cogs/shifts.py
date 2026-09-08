@@ -351,13 +351,18 @@ class Shifts(commands.Cog):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
-        try:
-            await interaction.response.defer(thinking=True)
-        except discord.NotFound as exc:
-            if getattr(exc, "code", None) == 10062:
-                log.warning("/shift menu interaction expired before acknowledgement")
-                return
-            raise
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.defer(thinking=True)
+            except discord.NotFound as exc:
+                if getattr(exc, "code", None) == 10062:
+                    log.warning("/shift menu interaction expired before acknowledgement")
+                    return
+                raise
+            except discord.HTTPException as exc:
+                if getattr(exc, "code", None) != 40060:
+                    raise
+                log.debug("/shift menu interaction was acknowledged concurrently")
         try:
             rows = await self.bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=100)
             active = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
@@ -374,6 +379,10 @@ class Shifts(commands.Cog):
                 log.warning("/shift menu interaction expired while loading the response")
                 return
             raise
+        except discord.HTTPException as exc:
+            if getattr(exc, "code", None) != 40060:
+                raise
+            log.debug("/shift menu response was already acknowledged")
         except Exception:
             log.exception("Could not build /shift menu for user %s", interaction.user.id)
             try:

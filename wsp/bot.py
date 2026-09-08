@@ -211,8 +211,11 @@ class WSPBot(commands.Bot):
         from discord import app_commands
 
         orig = error.original if isinstance(error, app_commands.CommandInvokeError) else error
-        if isinstance(orig, discord.NotFound) and getattr(orig, "code", None) == 10062:
+        if isinstance(orig, discord.NotFound) and getattr(orig, "code", None) in {10062, 40060}:
             log.warning("Ignored expired Discord interaction for %s", getattr(interaction.command, "qualified_name", "unknown"))
+            return
+        if isinstance(orig, discord.HTTPException) and getattr(orig, "code", None) == 40060:
+            log.warning("Ignored already-acknowledged Discord interaction for %s", getattr(interaction.command, "qualified_name", "unknown"))
             return
         if isinstance(orig, InsufficientPermission) or isinstance(error, InsufficientPermission):
             embed = discord.Embed(
