@@ -211,6 +211,8 @@ class WSPBot(commands.Bot):
         from discord import app_commands
 
         orig = error.original if isinstance(error, app_commands.CommandInvokeError) else error
+        if isinstance(orig, discord.NotFound) and getattr(orig, "code", None) == 10062:
+            return
         if isinstance(orig, InsufficientPermission) or isinstance(error, InsufficientPermission):
             embed = discord.Embed(
                 title="Restricted",
