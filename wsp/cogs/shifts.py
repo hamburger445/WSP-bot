@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import discord
@@ -25,6 +26,8 @@ from wsp.views.shifts import (
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
+
+log = logging.getLogger("wsp.shifts")
 
 
 def admin_shift_embed(member: discord.Member, rows) -> discord.Embed:
@@ -349,15 +352,16 @@ class Shifts(commands.Cog):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
         try:
-            await interaction.response.defer()
+            await interaction.response.defer(thinking=True)
         except discord.NotFound as exc:
             if getattr(exc, "code", None) == 10062:
+                log.warning("/shift menu interaction expired before acknowledgement")
                 return
             raise
-        rows = await self.bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=100)
-        active = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
-        cfg = await self.bot.guild_config(interaction.guild.id)
         try:
+            rows = await self.bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=100)
+            active = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
+            cfg = await self.bot.guild_config(interaction.guild.id)
             await interaction.edit_original_response(
                 embed=build_shift_management_embed(interaction.user, rows),
                 view=ShiftActionView(
@@ -366,8 +370,19 @@ class Shifts(commands.Cog):
                 ),
             )
         except discord.NotFound as exc:
-            if getattr(exc, "code", None) != 10062:
-                raise
+            if getattr(exc, "code", None) == 10062:
+                log.warning("/shift menu interaction expired while loading the response")
+                return
+            raise
+        except Exception:
+            log.exception("Could not build /shift menu for user %s", interaction.user.id)
+            try:
+                await interaction.followup.send(
+                    embed=error_embed("Shift menu unavailable", "The shift data could not be loaded. Please try again."),
+                    ephemeral=True,
+                )
+            except discord.HTTPException:
+                pass
 
     @shift.command(name="data", description="Show who is on duty.")
     async def data(self, interaction: discord.Interaction) -> None:
