@@ -13,7 +13,7 @@ from wsp.constants import PermissionLevel
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.permissions import has_level, resolve_level
-from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, sync_duty_role
+from wsp.utils import current_shift_seconds, hms_to_seconds, member_can_start_shift, mention_or_id, sync_duty_role
 from wsp.views.shifts import (
     ShiftActionView,
     ShiftMenuView,
