@@ -95,7 +95,7 @@ def build_shift_management_embed(user: discord.abc.User, rows) -> discord.Embed:
     completed = [row for row in rows if row["status"] == "completed"]
     total_seconds = sum(int(row["duration_seconds"] or 0) for row in completed)
     average = total_seconds // len(completed) if completed else 0
-    embed = base_embed(f"Shift Management: {user.mention}", color=COLOR_NAVY)
+    embed = base_embed(f"Shift Management: @{user.name}", color=COLOR_NAVY)
     embed.set_thumbnail(url=user.display_avatar.url)
     embed.add_field(
         name="All Time Information",
