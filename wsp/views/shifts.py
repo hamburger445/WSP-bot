@@ -91,6 +91,24 @@ async def build_shift_controls(status: str | None = None) -> discord.Embed:
     return base_embed("Shift controls", body, color=COLOR_NAVY)
 
 
+def build_shift_management_embed(user: discord.abc.User, rows) -> discord.Embed:
+    completed = [row for row in rows if row["status"] == "completed"]
+    total_seconds = sum(int(row["duration_seconds"] or 0) for row in completed)
+    average = total_seconds // len(completed) if completed else 0
+    embed = base_embed(f"Shift Management: {user.mention}", color=COLOR_NAVY)
+    embed.set_thumbnail(url=user.display_avatar.url)
+    embed.add_field(
+        name="All Time Information",
+        value=(
+            f"**Shift Count**: {len(completed)}\n"
+            f"**Total Duration**: {format_duration(total_seconds)}\n"
+            f"**Average Duration**: {format_duration(average)}"
+        ),
+        inline=False,
+    )
+    return embed
+
+
 async def build_duty_board(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
     embed = base_embed(
         "Duty board",

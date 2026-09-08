@@ -18,6 +18,7 @@ from wsp.views.shifts import (
     begin_shift,
     build_duty_board,
     build_leaderboard,
+    build_shift_management_embed,
     build_shift_controls,
     complete_shift,
 )
@@ -347,11 +348,9 @@ class Shifts(commands.Cog):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
-        row = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
-        status = row["status"] if row else None
-        embed = await build_shift_controls(status)
+        rows = await self.bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=100)
         await interaction.response.send_message(
-            embed=embed,
+            embed=build_shift_management_embed(interaction.user, rows),
         )
 
     @shift.command(name="data", description="Show who is on duty.")
