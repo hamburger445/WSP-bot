@@ -349,8 +349,14 @@ class Shifts(commands.Cog):
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
         rows = await self.bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=100)
+        active = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
+        cfg = await self.bot.guild_config(interaction.guild.id)
         await interaction.response.send_message(
             embed=build_shift_management_embed(interaction.user, rows),
+            view=ShiftActionView(
+                active["status"] if active else None,
+                can_start=member_can_start_shift(interaction.user, cfg),
+            ),
         )
 
     @shift.command(name="data", description="Show who is on duty.")

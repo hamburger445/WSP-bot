@@ -216,7 +216,15 @@ class Prefix(commands.Cog):
         if not isinstance(ctx.author, discord.Member) or ctx.guild is None:
             return
         rows = await self.bot.db.list_shifts(ctx.guild.id, ctx.author.id, limit=100)
-        await ctx.send(embed=build_shift_management_embed(ctx.author, rows))
+        active = await self.bot.db.active_shift(ctx.guild.id, ctx.author.id)
+        cfg = await self.bot.guild_config(ctx.guild.id)
+        await ctx.send(
+            embed=build_shift_management_embed(ctx.author, rows),
+            view=ShiftActionView(
+                active["status"] if active else None,
+                can_start=member_can_start_shift(ctx.author, cfg),
+            ),
+        )
 
     @shift_grp.command(name="data")
     async def shift_data(self, ctx: commands.Context) -> None:
