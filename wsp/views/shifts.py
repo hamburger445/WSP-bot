@@ -27,28 +27,10 @@ class ShiftResult:
 
 
 class ShiftMenuView(discord.ui.View):
-    """Public duty board. Personal start/pause/end live on /shift menu."""
+    """Public duty board. No buttons are attached to this view."""
 
     def __init__(self) -> None:
         super().__init__(timeout=None)
-
-    @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.secondary, custom_id="wsp:shift:board")
-    async def board(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Unavailable"), ephemeral=True)
-            return
-        bot: WSPBot = interaction.client  # type: ignore[assignment]
-        embed = await build_leaderboard(bot, interaction.guild)
-        await interaction.response.send_message(embed=embed)
-
-    @discord.ui.button(label="Refresh board", style=discord.ButtonStyle.primary, custom_id="wsp:shift:refresh")
-    async def refresh(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Unavailable"), ephemeral=True)
-            return
-        bot: WSPBot = interaction.client  # type: ignore[assignment]
-        embed = await build_duty_board(bot, interaction.guild)
-        await interaction.response.edit_message(embed=embed, view=ShiftMenuView())
 
 
 _SHIFT_CONTROL_STYLE = {
