@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -50,35 +51,66 @@ class ShiftMenuView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=ShiftMenuView())
 
 
-class ShiftActionView(discord.ui.View):
-    """Start / pause / resume / end. Disabled state is set per message for that trooper."""
+_SHIFT_CONTROL_STYLE = {
+    "start": ("Start shift", discord.ButtonStyle.success),
+    "pause": ("Pause", discord.ButtonStyle.secondary),
+    "resume": ("Resume", discord.ButtonStyle.primary),
+    "end": ("End shift", discord.ButtonStyle.danger),
+}
 
-    def __init__(self, status: str | None = None, *, lock_buttons: bool = True, can_start: bool = True) -> None:
-        super().__init__(timeout=None)
-        if not lock_buttons:
+
+class ShiftControlButton(discord.ui.DynamicItem[discord.ui.Button], template=r"wsp:shift:(?P<action>start|pause|resume|end):(?P<user_id>[0-9]+)"):
+    def __init__(self, action: str = "start", user_id: int = 0, *, disabled: bool = False) -> None:
+        label, style = _SHIFT_CONTROL_STYLE[action]
+        super().__init__(
+            discord.ui.Button(
+                label=label,
+                style=style,
+                disabled=disabled,
+                custom_id=f"wsp:shift:{action}:{user_id}",
+            )
+        )
+        self.action = action
+        self.user_id = user_id
+
+    @classmethod
+    async def from_custom_id(
+        cls, interaction: discord.Interaction, item: discord.ui.Button, match: re.Match[str]
+    ):
+        return cls(match["action"], int(match["user_id"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await reply_interaction(interaction, error_embed("Restricted"))
             return
+        if self.action == "start":
+            await start_shift_for(interaction)
+        elif self.action == "pause":
+            await _pause_shift(interaction)
+        elif self.action == "resume":
+            await _resume_shift(interaction)
+        else:
+            await _end_shift(interaction)
+
+
+class ShiftActionView(discord.ui.View):
+    """Start / pause / resume / end. Only the panel owner can use the buttons."""
+
+    def __init__(self, status: str | None = None, *, owner_id: int, can_start: bool = True) -> None:
+        super().__init__(timeout=None)
+        self.owner_id = owner_id
         on_duty = status in {"active", "paused"}
         paused = status == "paused"
-        self.start.disabled = on_duty or not can_start
-        self.pause.disabled = (not on_duty) or paused
-        self.resume.disabled = not paused
-        self.end.disabled = not on_duty
+        self.add_item(ShiftControlButton("start", owner_id, disabled=on_duty or not can_start))
+        self.add_item(ShiftControlButton("pause", owner_id, disabled=(not on_duty) or paused))
+        self.add_item(ShiftControlButton("resume", owner_id, disabled=not paused))
+        self.add_item(ShiftControlButton("end", owner_id, disabled=not on_duty))
 
-    @discord.ui.button(label="Start shift", style=discord.ButtonStyle.success, custom_id="wsp:shift:start")
-    async def start(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        await start_shift_for(interaction)
-
-    @discord.ui.button(label="Pause", style=discord.ButtonStyle.secondary, custom_id="wsp:shift:pause")
-    async def pause(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        await _pause_shift(interaction)
-
-    @discord.ui.button(label="Resume", style=discord.ButtonStyle.primary, custom_id="wsp:shift:resume")
-    async def resume(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        await _resume_shift(interaction)
-
-    @discord.ui.button(label="End shift", style=discord.ButtonStyle.danger, custom_id="wsp:shift:end")
-    async def end(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        await _end_shift(interaction)
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.owner_id:
+            return True
+        await reply_interaction(interaction, error_embed("Restricted"))
+        return False
 
 
 async def build_shift_controls(status: str | None = None) -> discord.Embed:
@@ -346,7 +378,11 @@ async def _send_personal_controls(interaction: discord.Interaction) -> None:
     row = await bot.db.active_shift(interaction.guild.id, interaction.user.id)
     status = row["status"] if row else None
     embed = await build_personal_shift(bot, interaction.guild, interaction.user, row)
-    await interaction.response.send_message(embed=embed, view=ShiftActionView(status), ephemeral=True)
+    await interaction.response.send_message(
+        embed=embed,
+        view=ShiftActionView(status, owner_id=interaction.user.id),
+        ephemeral=True,
+    )
 
 
 async def start_shift_for(interaction: discord.Interaction) -> None:
@@ -437,7 +473,7 @@ async def _finish_shift_action(
                 panel.add_field(name="Update", value=notice.title, inline=False)
             cfg = await bot.guild_config(guild.id)
             can_start = isinstance(interaction.user, discord.Member) and member_can_start_shift(interaction.user, cfg)
-            view = ShiftActionView(status, can_start=can_start)
+            view = ShiftActionView(status, owner_id=interaction.user.id, can_start=can_start)
             try:
                 if interaction.message:
                     await interaction.message.edit(embed=panel, view=view)

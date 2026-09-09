@@ -314,7 +314,7 @@ class Shifts(commands.Cog):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await reply_interaction(interaction, error_embed("Guild only"))
             return
-        if not await acknowledge(interaction, ephemeral=True):
+        if not await acknowledge(interaction, ephemeral=False):
             log.warning("/shift menu interaction expired before acknowledgement")
             return
         try:
@@ -330,6 +330,7 @@ class Shifts(commands.Cog):
                 ),
                 view=ShiftActionView(
                     active["status"] if active else None,
+                    owner_id=interaction.user.id,
                     can_start=member_can_start_shift(interaction.user, cfg),
                 ),
             )

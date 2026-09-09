@@ -47,12 +47,11 @@ class WSPBot(commands.Bot):
         self._ready_initialized = False
 
     async def setup_hook(self) -> None:
-        from wsp.views.shifts import ShiftActionView, ShiftMenuView
+        from wsp.views.shifts import ShiftControlButton, ShiftMenuView
         from wsp.cogs.loa import DenyLOAButton, ApproveLOAButton
 
         self.add_view(ShiftMenuView())
-        self.add_view(ShiftActionView(lock_buttons=False))
-        self.add_dynamic_items(ApproveLOAButton, DenyLOAButton)
+        self.add_dynamic_items(ShiftControlButton, ApproveLOAButton, DenyLOAButton)
         self.tree.on_error = self.on_app_command_error
 
         for module in COG_MODULES:
@@ -167,16 +166,44 @@ class WSPBot(commands.Bot):
     ) -> discord.Message | None:
         if guild is None:
             return None
+        channel = await self.resolve_log_channel(guild, channel_key)
+        if channel is None:
+            log.warning("No log channel configured for %s in guild %s", channel_key, guild.id)
+            return None
+        try:
+            return await channel.send(embed=embed, view=view)
+        except discord.HTTPException as exc:
+            log.warning("Failed to send notification to %s: %s", channel_key, exc)
+            return None
+
+    async def resolve_log_channel(
+        self, guild: discord.Guild, channel_key: str
+    ) -> discord.abc.Messageable | None:
         cfg = await self.guild_config(guild.id)
-        channel_id = cfg.channel_id(channel_key)
+        channel = await self._sendable_channel(guild, cfg.channel_id(channel_key))
+        if channel is not None:
+            return channel
+        found = _match_log_channel(guild, channel_key)
+        if found is None:
+            return None
+        cfg.set_path(["channels", channel_key], str(found.id))
+        await self.save_config(guild.id, cfg)
+        log.info("Bound %s to #%s (%s)", channel_key, found.name, found.id)
+        return found
+
+    async def _sendable_channel(
+        self, guild: discord.Guild, channel_id: int
+    ) -> discord.abc.Messageable | None:
         if not channel_id:
             return None
         channel = guild.get_channel(channel_id)
-        if isinstance(channel, discord.TextChannel):
+        if channel is None:
             try:
-                return await channel.send(embed=embed, view=view)
-            except discord.HTTPException as exc:
-                log.warning("Failed to send notification to %s: %s", channel_key, exc)
+                channel = await self.fetch_channel(channel_id)
+            except discord.HTTPException:
+                return None
+        if isinstance(channel, (discord.TextChannel, discord.Thread)):
+            return channel
         return None
 
     async def try_dm(
@@ -318,6 +345,38 @@ class WSPBot(commands.Bot):
         except discord.HTTPException:
             pass
         _ = orig
+
+
+_LOG_CHANNEL_NAMES: dict[str, tuple[str, ...]] = {
+    "shift_log": ("shift-log", "shift-logs", "shift_log", "shiftlogs"),
+    "command_log": ("command-log", "command-logs", "command_log"),
+    "hr_log": ("hr-log", "hr-logs", "hr_log"),
+    "notifications": ("notifications", "department-notifications"),
+    "promotions": ("promotions", "promotion-log", "promotion-logs"),
+    "quota": ("quota", "quota-log", "quota-logs"),
+    "audit_log": ("audit-log", "audit-logs"),
+    "loa": ("loa", "leave-of-absence", "loa-requests"),
+}
+_GENERIC_LOG_NAMES = ("logs", "wsp-logs", "department-logs")
+
+
+def _channel_slug(name: str) -> str:
+    return name.lower().replace(" ", "-").replace("_", "-")
+
+
+def _match_log_channel(guild: discord.Guild, key: str) -> discord.TextChannel | None:
+    aliases = _LOG_CHANNEL_NAMES.get(key, (key.replace("_", "-"),))
+    ranked: list[tuple[int, discord.TextChannel]] = []
+    for channel in guild.text_channels:
+        slug = _channel_slug(channel.name)
+        if slug in aliases:
+            ranked.append((0, channel))
+        elif any(slug.endswith(alias) or slug.startswith(f"{alias}-") for alias in aliases):
+            ranked.append((1, channel))
+        elif key != "loa" and slug in _GENERIC_LOG_NAMES:
+            ranked.append((2, channel))
+    ranked.sort(key=lambda item: item[0])
+    return ranked[0][1] if ranked else None
 
 
 async def _respond_error(interaction: discord.Interaction, embed: discord.Embed) -> None:

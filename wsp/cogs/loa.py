@@ -682,22 +682,14 @@ class LOADenyModal(discord.ui.Modal, title="Deny LOA"):
 
 
 async def _post_loa_review(bot: WSPBot, guild: discord.Guild, embed: discord.Embed, view: discord.ui.View) -> bool:
-    cfg = await bot.guild_config(guild.id)
-    channel_id = cfg.channel_id("loa")
-    channel = guild.get_channel(channel_id) if channel_id else None
-    if channel is None and channel_id:
-        try:
-            fetched = await bot.fetch_channel(channel_id)
-        except discord.HTTPException:
-            fetched = None
-        channel = fetched if isinstance(fetched, discord.TextChannel) else None
-    if isinstance(channel, discord.TextChannel):
-        try:
-            await channel.send(embed=embed, view=view)
-            return True
-        except discord.HTTPException:
-            return False
-    return False
+    channel = await bot.resolve_log_channel(guild, "loa")
+    if not isinstance(channel, discord.TextChannel):
+        return False
+    try:
+        await channel.send(embed=embed, view=view)
+        return True
+    except discord.HTTPException:
+        return False
 
 
 async def _decide_loa(bot: WSPBot, interaction: discord.Interaction, loa_id: int, status: str, note: str | None) -> None:

@@ -227,6 +227,7 @@ class Prefix(commands.Cog):
             ),
             view=ShiftActionView(
                 active["status"] if active else None,
+                owner_id=ctx.author.id,
                 can_start=member_can_start_shift(ctx.author, cfg),
             ),
         )
