@@ -91,21 +91,26 @@ async def build_shift_controls(status: str | None = None) -> discord.Embed:
     return base_embed("Shift controls", body, color=COLOR_NAVY)
 
 
-def build_shift_management_embed(user: discord.abc.User, rows) -> discord.Embed:
-    completed = [row for row in rows if row["status"] == "completed"]
-    total_seconds = sum(int(row["duration_seconds"] or 0) for row in completed)
-    average = total_seconds // len(completed) if completed else 0
+def build_shift_management_embed(
+    user: discord.abc.User,
+    *,
+    shift_count: int = 0,
+    total_seconds: int = 0,
+    status: str | None = None,
+) -> discord.Embed:
+    average = total_seconds // shift_count if shift_count else 0
     embed = base_embed(f"Shift Management: @{user.name}", color=COLOR_NAVY)
     embed.set_thumbnail(url=user.display_avatar.url)
     embed.add_field(
         name="All Time Information",
         value=(
-            f"**Shift Count**: {len(completed)}\n"
+            f"**Shift Count**: {shift_count}\n"
             f"**Total Duration**: {format_duration(total_seconds)}\n"
             f"**Average Duration**: {format_duration(average)}"
         ),
         inline=False,
     )
+    embed.add_field(name="Current Status", value=str(status) if status else "Off duty", inline=False)
     return embed
 
 
@@ -179,9 +184,16 @@ async def build_personal_shift(bot: WSPBot, guild: discord.Guild, user: discord.
     return embed
 
 
-async def begin_shift(bot: WSPBot, guild: discord.Guild, member: discord.Member, actor: discord.abc.User) -> ShiftResult:
+async def begin_shift(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.Member,
+    actor: discord.abc.User,
+    *,
+    require_certified: bool = True,
+) -> ShiftResult:
     cfg = await bot.guild_config(guild.id)
-    if not member_can_start_shift(member, cfg):
+    if require_certified and not member_can_start_shift(member, cfg):
         return ShiftResult(error="Cannot start shift.")
     existing = await bot.db.active_shift(guild.id, member.id)
     if existing:
@@ -250,6 +262,82 @@ async def complete_shift(bot: WSPBot, guild: discord.Guild, member: discord.Memb
     return ShiftResult(notice=notice, log=log_embed, duration=duration, shift_id=int(row["id"]))
 
 
+async def pause_shift(bot: WSPBot, guild: discord.Guild, member: discord.Member, actor: discord.abc.User) -> ShiftResult:
+    row = await bot.db.active_shift(guild.id, member.id)
+    if not row or row["status"] != "active":
+        return ShiftResult(error="No active shift.")
+    await bot.db.update_shift(row["id"], status="paused", pause_started=now_ts())
+    cfg = await bot.guild_config(guild.id)
+    await sync_duty_role(member, cfg, False)
+    await bot.db.audit(
+        guild.id,
+        "shift_pause",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=member.id,
+        target_name=str(member),
+        details=f"Shift #{row['id']}",
+    )
+    notice = success_embed("Shift paused", "Resume when you return to duty.")
+    if actor.id != member.id:
+        notice.add_field(name="Paused by", value=actor.mention, inline=True)
+    log_embed = base_embed("Shift paused", f"{member.mention} paused shift `#{row['id']}`.", color=COLOR_NAVY)
+    return ShiftResult(notice=notice, log=log_embed, shift_id=int(row["id"]))
+
+
+async def resume_shift(bot: WSPBot, guild: discord.Guild, member: discord.Member, actor: discord.abc.User) -> ShiftResult:
+    row = await bot.db.active_shift(guild.id, member.id)
+    if not row or row["status"] != "paused":
+        return ShiftResult(error="No paused shift.")
+    extra = max(0, now_ts() - int(row["pause_started"] or now_ts()))
+    await bot.db.update_shift(
+        row["id"],
+        status="active",
+        pause_started=None,
+        paused_seconds=int(row["paused_seconds"] or 0) + extra,
+    )
+    cfg = await bot.guild_config(guild.id)
+    await sync_duty_role(member, cfg, True)
+    await bot.db.audit(
+        guild.id,
+        "shift_resume",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=member.id,
+        target_name=str(member),
+        details=f"Shift #{row['id']}",
+    )
+    notice = success_embed("Shift resumed")
+    if actor.id != member.id:
+        notice.add_field(name="Resumed by", value=actor.mention, inline=True)
+    log_embed = base_embed("Shift resumed", f"{member.mention} resumed shift `#{row['id']}`.", color=COLOR_SUCCESS)
+    return ShiftResult(notice=notice, log=log_embed, shift_id=int(row["id"]))
+
+
+async def acknowledge(interaction: discord.Interaction, *, ephemeral: bool = False) -> bool:
+    if interaction.response.is_done():
+        return True
+    try:
+        await interaction.response.defer(ephemeral=ephemeral)
+        return True
+    except discord.NotFound:
+        return False
+    except discord.HTTPException as exc:
+        if getattr(exc, "code", None) in {10062, 40060}:
+            return interaction.response.is_done()
+        raise
+
+
+async def reply_interaction(interaction: discord.Interaction, embed: discord.Embed, *, ephemeral: bool = True) -> None:
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+    except discord.HTTPException:
+        pass
+
+
 async def _send_personal_controls(interaction: discord.Interaction) -> None:
     if not interaction.guild:
         await interaction.response.send_message(embed=error_embed("Unavailable"), ephemeral=True)
@@ -262,82 +350,57 @@ async def _send_personal_controls(interaction: discord.Interaction) -> None:
 
 
 async def start_shift_for(interaction: discord.Interaction) -> None:
+    if not await acknowledge(interaction):
+        return
     bot: WSPBot = interaction.client  # type: ignore[assignment]
     if not interaction.guild or not isinstance(interaction.user, discord.Member):
-        await _reply_ephemeral(interaction, error_embed("Unavailable"))
+        await reply_interaction(interaction, error_embed("Unavailable"))
         return
     result = await begin_shift(bot, interaction.guild, interaction.user, interaction.user)
     if result.error:
-        await _reply_ephemeral(interaction, error_embed("Cannot start shift", result.error))
+        await reply_interaction(interaction, error_embed("Cannot start shift", result.error))
         return
     await _finish_shift_action(interaction, result.notice, result.log)
 
 
 async def _pause_shift(interaction: discord.Interaction) -> None:
+    if not await acknowledge(interaction):
+        return
     bot: WSPBot = interaction.client  # type: ignore[assignment]
     if not interaction.guild or not isinstance(interaction.user, discord.Member):
-        await _reply_ephemeral(interaction, error_embed("Unavailable"))
+        await reply_interaction(interaction, error_embed("Unavailable"))
         return
-    row = await bot.db.active_shift(interaction.guild.id, interaction.user.id)
-    if not row:
-        await _reply_ephemeral(interaction, error_embed("No active shift"))
+    result = await pause_shift(bot, interaction.guild, interaction.user, interaction.user)
+    if result.error:
+        await reply_interaction(interaction, error_embed("Cannot pause shift", result.error))
         return
-    if row["status"] == "paused":
-        await _reply_ephemeral(interaction, error_embed("Already paused"))
-        return
-    await bot.db.update_shift(row["id"], status="paused", pause_started=now_ts())
-    cfg = await bot.guild_config(interaction.guild.id)
-    await sync_duty_role(interaction.user, cfg, False)
-    await bot.db.audit(
-        interaction.guild.id,
-        "shift_pause",
-        actor_id=interaction.user.id,
-        actor_name=str(interaction.user),
-        details=f"Shift #{row['id']}",
-    )
-    notice = success_embed("Shift paused", "Resume when you return to duty.")
-    log_embed = base_embed("Shift paused", f"{interaction.user.mention} paused shift `#{row['id']}`.", color=COLOR_NAVY)
-    await _finish_shift_action(interaction, notice, log_embed)
+    await _finish_shift_action(interaction, result.notice, result.log)
 
 
 async def _resume_shift(interaction: discord.Interaction) -> None:
+    if not await acknowledge(interaction):
+        return
     bot: WSPBot = interaction.client  # type: ignore[assignment]
     if not interaction.guild or not isinstance(interaction.user, discord.Member):
-        await _reply_ephemeral(interaction, error_embed("Unavailable"))
+        await reply_interaction(interaction, error_embed("Unavailable"))
         return
-    row = await bot.db.active_shift(interaction.guild.id, interaction.user.id)
-    if not row or row["status"] != "paused":
-        await _reply_ephemeral(interaction, error_embed("No paused shift"))
+    result = await resume_shift(bot, interaction.guild, interaction.user, interaction.user)
+    if result.error:
+        await reply_interaction(interaction, error_embed("Cannot resume shift", result.error))
         return
-    extra = max(0, now_ts() - int(row["pause_started"] or now_ts()))
-    await bot.db.update_shift(
-        row["id"],
-        status="active",
-        pause_started=None,
-        paused_seconds=int(row["paused_seconds"] or 0) + extra,
-    )
-    cfg = await bot.guild_config(interaction.guild.id)
-    await sync_duty_role(interaction.user, cfg, True)
-    await bot.db.audit(
-        interaction.guild.id,
-        "shift_resume",
-        actor_id=interaction.user.id,
-        actor_name=str(interaction.user),
-        details=f"Shift #{row['id']}",
-    )
-    notice = success_embed("Shift resumed")
-    log_embed = base_embed("Shift resumed", f"{interaction.user.mention} resumed shift `#{row['id']}`.", color=COLOR_SUCCESS)
-    await _finish_shift_action(interaction, notice, log_embed)
+    await _finish_shift_action(interaction, result.notice, result.log)
 
 
 async def _end_shift(interaction: discord.Interaction) -> None:
+    if not await acknowledge(interaction):
+        return
     bot: WSPBot = interaction.client  # type: ignore[assignment]
     if not interaction.guild or not isinstance(interaction.user, discord.Member):
-        await _reply_ephemeral(interaction, error_embed("Unavailable"))
+        await reply_interaction(interaction, error_embed("Unavailable"))
         return
     result = await complete_shift(bot, interaction.guild, interaction.user, interaction.user)
     if result.error:
-        await _reply_ephemeral(interaction, error_embed("Cannot end shift", result.error))
+        await reply_interaction(interaction, error_embed("Cannot end shift", result.error))
         return
     await _finish_shift_action(interaction, result.notice, result.log)
 
@@ -357,9 +420,17 @@ async def _finish_shift_action(
         row = await bot.db.active_shift(guild.id, interaction.user.id)
         status = row["status"] if row else None
         title = _message_title(interaction)
-        if title in {"Your shift", "Shift controls"}:
+        if title in {"Your shift", "Shift controls"} or title.startswith("Shift Management"):
             if title == "Shift controls":
                 panel = await build_shift_controls(status)
+            elif title.startswith("Shift Management"):
+                totals = await bot.db.shift_totals(guild.id, interaction.user.id)
+                panel = build_shift_management_embed(
+                    interaction.user,
+                    shift_count=int(totals["shift_count"] or 0) if totals else 0,
+                    total_seconds=int(totals["total_seconds"] or 0) if totals else 0,
+                    status=status,
+                )
             else:
                 panel = await build_personal_shift(bot, guild, interaction.user, row)
             if notice.title:
@@ -367,18 +438,18 @@ async def _finish_shift_action(
             cfg = await bot.guild_config(guild.id)
             can_start = isinstance(interaction.user, discord.Member) and member_can_start_shift(interaction.user, cfg)
             view = ShiftActionView(status, can_start=can_start)
-            if not interaction.response.is_done():
-                await interaction.response.edit_message(embed=panel, view=view)
-            elif interaction.message:
-                try:
+            try:
+                if interaction.message:
                     await interaction.message.edit(embed=panel, view=view)
-                except discord.HTTPException:
-                    await _reply_ephemeral(interaction, notice)
-                    return
-            if title == "Shift controls":
-                await interaction.followup.send(embed=notice, ephemeral=True)
+                else:
+                    await interaction.edit_original_response(embed=panel, view=view)
+            except discord.HTTPException:
+                await reply_interaction(interaction, notice)
+                return
+            if title == "Shift controls" or title.startswith("Shift Management"):
+                await reply_interaction(interaction, notice)
             return
-    await _reply_ephemeral(interaction, notice)
+    await reply_interaction(interaction, notice)
 
 
 async def _refresh_duty_board_message(interaction: discord.Interaction) -> None:
@@ -400,13 +471,6 @@ def _message_title(interaction: discord.Interaction) -> str:
     if interaction.message and interaction.message.embeds:
         return interaction.message.embeds[0].title or ""
     return ""
-
-
-async def _reply_ephemeral(interaction: discord.Interaction, embed: discord.Embed) -> None:
-    if interaction.response.is_done():
-        await interaction.followup.send(embed=embed, ephemeral=True)
-    else:
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def _history(interaction: discord.Interaction) -> None:

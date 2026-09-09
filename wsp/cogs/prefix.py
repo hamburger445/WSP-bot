@@ -215,11 +215,16 @@ class Prefix(commands.Cog):
     async def shift_menu(self, ctx: commands.Context) -> None:
         if not isinstance(ctx.author, discord.Member) or ctx.guild is None:
             return
-        rows = await self.bot.db.list_shifts(ctx.guild.id, ctx.author.id, limit=100)
+        totals = await self.bot.db.shift_totals(ctx.guild.id, ctx.author.id)
         active = await self.bot.db.active_shift(ctx.guild.id, ctx.author.id)
         cfg = await self.bot.guild_config(ctx.guild.id)
         await ctx.send(
-            embed=build_shift_management_embed(ctx.author, rows),
+            embed=build_shift_management_embed(
+                ctx.author,
+                shift_count=int(totals["shift_count"] or 0) if totals else 0,
+                total_seconds=int(totals["total_seconds"] or 0) if totals else 0,
+                status=active["status"] if active else None,
+            ),
             view=ShiftActionView(
                 active["status"] if active else None,
                 can_start=member_can_start_shift(ctx.author, cfg),
@@ -276,7 +281,7 @@ class Prefix(commands.Cog):
     @shift_admin.command(name="start")
     @prefix_has_level(PermissionLevel.SUPERVISOR)
     async def shift_admin_start(self, ctx: commands.Context, member: discord.Member) -> None:
-        result = await begin_shift(self.bot, ctx.guild, member, ctx.author)  # type: ignore[arg-type]
+        result = await begin_shift(self.bot, ctx.guild, member, ctx.author, require_certified=False)  # type: ignore[arg-type]
         await _prefix_shift_result(ctx, result)
 
     @shift_admin.command(name="end")

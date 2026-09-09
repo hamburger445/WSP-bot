@@ -40,7 +40,7 @@ STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/promote` — promote a member",
         "`/demote` — demote a member",
         "`/fire` — fire a member",
-        "`/shift admin` — start, end, edit, or delete a shift",
+        "`/shift admin` — start, pause, or end a shift",
         "`/quota admin` — change quota settings",
     ]),
     ("Command", "Overview", [

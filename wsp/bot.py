@@ -244,13 +244,27 @@ class WSPBot(commands.Bot):
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         if interaction.type == discord.InteractionType.application_command and interaction.command:
             guild_id = interaction.guild_id or 0
+            asyncio.create_task(
+                self._audit_interaction(
+                    guild_id,
+                    interaction.user.id,
+                    str(interaction.user),
+                    f"/{interaction.command.qualified_name}",
+                ),
+                name="wsp-interaction-audit",
+            )
+
+    async def _audit_interaction(self, guild_id: int, actor_id: int, actor_name: str, details: str) -> None:
+        try:
             await self.db.audit(
                 guild_id,
                 "command",
-                actor_id=interaction.user.id,
-                actor_name=str(interaction.user),
-                details=f"/{interaction.command.qualified_name}",
+                actor_id=actor_id,
+                actor_name=actor_name,
+                details=details,
             )
+        except Exception:
+            log.exception("Interaction audit failed")
 
     async def on_command(self, ctx: commands.Context) -> None:
         if ctx.command is None:

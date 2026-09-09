@@ -10,19 +10,21 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import PermissionLevel
-from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.permissions import has_level, resolve_level
 from wsp.utils import current_shift_seconds, hms_to_seconds, member_can_start_shift, mention_or_id, sync_duty_role
 from wsp.views.shifts import (
     ShiftActionView,
     ShiftMenuView,
+    acknowledge,
     begin_shift,
     build_duty_board,
     build_leaderboard,
     build_shift_management_embed,
-    build_shift_controls,
     complete_shift,
+    pause_shift,
+    reply_interaction,
+    resume_shift,
 )
 
 if TYPE_CHECKING:
@@ -99,8 +101,8 @@ class AdminShiftEditModal(discord.ui.Modal, title="Edit shift time"):
             "shift_log",
             base_embed("Shift edited", f"{interaction.user.mention} set {self.view.member.mention} shift `#{row['id']}` to **{format_duration(duration)}**."),
         )
-        self.view.rows = await self.view.bot.db.list_shifts(interaction.guild.id, self.view.member.id, limit=25)
         await interaction.response.send_message(f"Shift #{row['id']} updated to {format_duration(duration)}.", ephemeral=True)
+        await self.view.refresh_panel(interaction)
 
 
 class AdminShiftView(discord.ui.View):
@@ -110,7 +112,6 @@ class AdminShiftView(discord.ui.View):
         self.member = member
         self.rows = rows
         self.selected_shift_id: int | None = None
-        active = next((row for row in rows if row["status"] in {"active", "paused"}), None)
         self.action_select = discord.ui.Select(
             placeholder="Shift Actions",
             options=[
@@ -126,70 +127,79 @@ class AdminShiftView(discord.ui.View):
         )
         self.action_select.callback = self.select_action
         self.add_item(self.action_select)
+        self.shift_select = discord.ui.Select(
+            placeholder="Pick a shift to edit or delete",
+            options=self._shift_options(),
+            row=1,
+        )
+        self.shift_select.callback = self.select_shift
+        self.add_item(self.shift_select)
+        self._sync_buttons()
+
+    def _shift_options(self) -> list[discord.SelectOption]:
         options = [
             discord.SelectOption(
                 label=f"Shift #{row['id']} - {row['status']}",
                 value=str(row["id"]),
                 description=f"{format_duration(row['duration_seconds'] or current_shift_seconds(row))} • {ts_rel(row['start_time'])}",
             )
-            for row in rows[:25]
+            for row in self.rows[:25]
         ]
-        self.shift_select = discord.ui.Select(
-            placeholder="Pick a shift to edit or delete",
-            options=options or [discord.SelectOption(label="No shifts", value="none")],
-            row=1,
-        )
-        self.shift_select.callback = self.select_shift
-        self.add_item(self.shift_select)
+        return options or [discord.SelectOption(label="No shifts", value="none")]
+
+    def _active(self):
+        return next((row for row in self.rows if row["status"] in {"active", "paused"}), None)
+
+    def _sync_buttons(self) -> None:
+        active = self._active()
         self.start.disabled = active is not None
-        self.pause.disabled = active is None or active["status"] != "active"
-        self.resume.disabled = active is None or active["status"] != "paused"
+        paused = active is not None and active["status"] == "paused"
+        self.pause.disabled = active is None
+        self.pause.label = "Resume shift" if paused else "Pause shift"
         self.end.disabled = active is None
 
     async def select_action(self, interaction: discord.Interaction) -> None:
+        action = self.action_select.values[0]
+        if action == "edit":
+            if not await self.guard(interaction):
+                return
+            if self.selected_shift_id is None:
+                await interaction.response.send_message("Pick a shift first.", ephemeral=True)
+                return
+            await interaction.response.send_modal(AdminShiftEditModal(self))
+            return
+        if not await acknowledge(interaction):
+            return
         if not await self.guard(interaction):
             return
-        await self.perform_action(interaction, self.action_select.values[0])
+        await self.perform_action(interaction, action)
 
     async def perform_action(self, interaction: discord.Interaction, action: str) -> None:
         if action == "start":
-            result = await begin_shift(self.bot, interaction.guild, self.member, interaction.user)
+            result = await begin_shift(
+                self.bot, interaction.guild, self.member, interaction.user, require_certified=False
+            )
             await _admin_reply(interaction, result)
             if not result.error:
-                await self.refresh_buttons(interaction)
+                await self.refresh_panel(interaction)
             return
         if action == "end":
             result = await complete_shift(self.bot, interaction.guild, self.member, interaction.user)
             await _admin_reply(interaction, result)
             if not result.error:
-                await self.refresh_buttons(interaction)
+                await self.refresh_panel(interaction)
             return
         if action == "pause":
-            row = await self.bot.db.active_shift(interaction.guild.id, self.member.id)
-            if not row or row["status"] != "active":
-                await interaction.response.send_message(embed=error_embed("Cannot pause", "The user has no active shift."), ephemeral=True)
-                return
-            await self.bot.db.update_shift(row["id"], status="paused", pause_started=now_ts())
-            await sync_duty_role(self.member, await self.bot.guild_config(interaction.guild.id), False)
-            await interaction.response.send_message(embed=success_embed("Shift paused"), ephemeral=True)
-            await self.refresh_buttons(interaction)
+            result = await pause_shift(self.bot, interaction.guild, self.member, interaction.user)
+            await _admin_reply(interaction, result)
+            if not result.error:
+                await self.refresh_panel(interaction)
             return
         if action == "resume":
-            row = await self.bot.db.active_shift(interaction.guild.id, self.member.id)
-            if not row or row["status"] != "paused":
-                await interaction.response.send_message(embed=error_embed("Cannot resume", "The user has no paused shift."), ephemeral=True)
-                return
-            extra = max(0, now_ts() - int(row["pause_started"] or now_ts()))
-            await self.bot.db.update_shift(row["id"], status="active", pause_started=None, paused_seconds=int(row["paused_seconds"] or 0) + extra)
-            await sync_duty_role(self.member, await self.bot.guild_config(interaction.guild.id), True)
-            await interaction.response.send_message(embed=success_embed("Shift resumed"), ephemeral=True)
-            await self.refresh_buttons(interaction)
-            return
-        if action == "edit":
-            if self.selected_shift_id is None:
-                await interaction.response.send_message("Pick a shift first.", ephemeral=True)
-            else:
-                await interaction.response.send_modal(AdminShiftEditModal(self))
+            result = await resume_shift(self.bot, interaction.guild, self.member, interaction.user)
+            await _admin_reply(interaction, result)
+            if not result.error:
+                await self.refresh_panel(interaction)
             return
         if action == "delete":
             await self.delete_selected(interaction)
@@ -198,31 +208,35 @@ class AdminShiftView(discord.ui.View):
 
     async def guard(self, interaction: discord.Interaction) -> bool:
         if not interaction.guild or await resolve_level(interaction) < PermissionLevel.SUPERVISOR:
-            await interaction.response.send_message(embed=error_embed("Restricted"), ephemeral=True)
+            await reply_interaction(interaction, error_embed("Restricted"))
             return False
         return True
 
-    async def refresh_buttons(self, interaction: discord.Interaction) -> None:
-        active = await self.bot.db.active_shift(interaction.guild.id, self.member.id)
-        self.start.disabled = active is not None
-        self.pause.disabled = active is None or active["status"] != "active"
-        self.resume.disabled = active is None or active["status"] != "paused"
-        self.end.disabled = active is None
-        if interaction.message:
-            try:
-                await interaction.message.edit(view=self)
-            except discord.HTTPException:
-                pass
+    async def refresh_panel(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            return
+        self.rows = await self.bot.db.list_shifts(interaction.guild.id, self.member.id, limit=25)
+        self.shift_select.options = self._shift_options()
+        self._sync_buttons()
+        embed = admin_shift_embed(self.member, self.rows)
+        try:
+            await interaction.edit_original_response(embed=embed, view=self)
+        except discord.HTTPException:
+            if interaction.message:
+                try:
+                    await interaction.message.edit(embed=embed, view=self)
+                except discord.HTTPException:
+                    pass
 
     async def select_shift(self, interaction: discord.Interaction) -> None:
         if not await self.guard(interaction):
             return
         value = self.shift_select.values[0]
         if value == "none":
-            await interaction.response.send_message("This user has no shifts.", ephemeral=True)
+            await reply_interaction(interaction, error_embed("Not found"))
             return
         self.selected_shift_id = int(value)
-        await interaction.response.send_message(f"Selected shift #{value}.", ephemeral=True)
+        await reply_interaction(interaction, success_embed("Shift selected", f"Shift `#{value}`."))
 
     async def show_history(self, interaction: discord.Interaction) -> None:
         rows = await self.bot.db.list_shifts(interaction.guild.id, self.member.id, limit=25)
@@ -231,93 +245,41 @@ class AdminShiftView(discord.ui.View):
             f"`#{row['id']}` {row['status']} • {format_duration(row['duration_seconds'] or current_shift_seconds(row))} • {ts(row['start_time'])}"
             for row in rows
         ) or "No records."
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await reply_interaction(interaction, embed)
 
     @discord.ui.button(label="Start shift", style=discord.ButtonStyle.success, row=2)
     async def start(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not await acknowledge(interaction):
+            return
         if not await self.guard(interaction):
             return
-        result = await begin_shift(self.bot, interaction.guild, self.member, interaction.user)
-        await _admin_reply(interaction, result)
-        if not result.error:
-            await self.refresh_buttons(interaction)
+        await self.perform_action(interaction, "start")
 
-    @discord.ui.button(label="Pause", style=discord.ButtonStyle.secondary, row=2)
+    @discord.ui.button(label="Pause shift", style=discord.ButtonStyle.secondary, row=2)
     async def pause(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not await acknowledge(interaction):
+            return
         if not await self.guard(interaction):
             return
-        row = await self.bot.db.active_shift(interaction.guild.id, self.member.id)
-        if not row or row["status"] != "active":
-            await interaction.response.send_message(embed=error_embed("Cannot pause", "The user has no active shift."), ephemeral=True)
-            return
-        await self.bot.db.update_shift(row["id"], status="paused", pause_started=now_ts())
-        await sync_duty_role(self.member, await self.bot.guild_config(interaction.guild.id), False)
-        await interaction.response.send_message(embed=success_embed("Shift paused"), ephemeral=True)
-        await self.refresh_buttons(interaction)
-
-    @discord.ui.button(label="Resume", style=discord.ButtonStyle.primary, row=2)
-    async def resume(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        if not await self.guard(interaction):
-            return
-        row = await self.bot.db.active_shift(interaction.guild.id, self.member.id)
-        if not row or row["status"] != "paused":
-            await interaction.response.send_message(embed=error_embed("Cannot resume", "The user has no paused shift."), ephemeral=True)
-            return
-        extra = max(0, now_ts() - int(row["pause_started"] or now_ts()))
-        await self.bot.db.update_shift(
-            row["id"], status="active", pause_started=None, paused_seconds=int(row["paused_seconds"] or 0) + extra
-        )
-        await sync_duty_role(self.member, await self.bot.guild_config(interaction.guild.id), True)
-        await interaction.response.send_message(embed=success_embed("Shift resumed"), ephemeral=True)
-        await self.refresh_buttons(interaction)
+        active = await self.bot.db.active_shift(interaction.guild.id, self.member.id)
+        action = "resume" if active and active["status"] == "paused" else "pause"
+        await self.perform_action(interaction, action)
 
     @discord.ui.button(label="End shift", style=discord.ButtonStyle.danger, row=2)
     async def end(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if not await acknowledge(interaction):
+            return
         if not await self.guard(interaction):
             return
-        result = await complete_shift(self.bot, interaction.guild, self.member, interaction.user)
-        await _admin_reply(interaction, result)
-        if not result.error:
-            await self.refresh_buttons(interaction)
-
-    @discord.ui.button(label="Most recent", style=discord.ButtonStyle.primary, row=3)
-    async def recent(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        if not await self.guard(interaction):
-            return
-        if not self.rows:
-            await interaction.response.send_message("This user has no shifts.", ephemeral=True)
-            return
-        self.selected_shift_id = int(self.rows[0]["id"])
-        await interaction.response.send_message(f"Selected most recent shift #{self.selected_shift_id}.", ephemeral=True)
-
-    @discord.ui.button(label="Edit selected", style=discord.ButtonStyle.primary, row=3)
-    async def edit(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        if not await self.guard(interaction):
-            return
-        if self.selected_shift_id is None:
-            await interaction.response.send_message("Pick a shift or choose Most recent first.", ephemeral=True)
-            return
-        await interaction.response.send_modal(AdminShiftEditModal(self))
-
-    @discord.ui.button(label="View all shifts", style=discord.ButtonStyle.secondary, row=3)
-    async def history(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        if not await self.guard(interaction):
-            return
-        await self.show_history(interaction)
-
-    @discord.ui.button(label="Delete selected", style=discord.ButtonStyle.danger, row=4)
-    async def delete(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        if not await self.guard(interaction):
-            return
-        await self.delete_selected(interaction)
+        await self.perform_action(interaction, "end")
 
     async def delete_selected(self, interaction: discord.Interaction) -> None:
         if self.selected_shift_id is None:
-            await interaction.response.send_message("Pick a shift or choose Most recent first.", ephemeral=True)
+            await reply_interaction(interaction, error_embed("Not found"))
             return
         row = await self.bot.db.get_shift(self.selected_shift_id)
         if row is None or str(row["guild_id"]) != str(interaction.guild.id) or str(row["discord_id"]) != str(self.member.id):
-            await interaction.response.send_message("That shift could not be found.", ephemeral=True)
+            await reply_interaction(interaction, error_embed("Not found"))
             return
         if row["status"] in {"active", "paused"}:
             await sync_duty_role(self.member, await self.bot.guild_config(interaction.guild.id), False)
@@ -336,9 +298,9 @@ class AdminShiftView(discord.ui.View):
             "shift_log",
             base_embed("Shift deleted", f"{interaction.user.mention} deleted {self.member.mention} shift `#{row['id']}`."),
         )
-        self.rows = await self.bot.db.list_shifts(interaction.guild.id, self.member.id, limit=25)
         self.selected_shift_id = None
-        await interaction.response.send_message(f"Shift #{row['id']} deleted.", ephemeral=True)
+        await reply_interaction(interaction, success_embed("Shift deleted", f"Removed shift `#{row['id']}`."))
+        await self.refresh_panel(interaction)
 
 
 class Shifts(commands.Cog):
@@ -350,52 +312,36 @@ class Shifts(commands.Cog):
     @shift.command(name="menu", description="View your current shift status.")
     async def menu(self, interaction: discord.Interaction) -> None:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, error_embed("Guild only"))
             return
-        if not interaction.response.is_done():
-            try:
-                await interaction.response.send_message(
-                    embed=base_embed("Shift Management", "Loading shift information..."),
-                    ephemeral=True,
-                )
-            except discord.NotFound as exc:
-                if getattr(exc, "code", None) == 10062:
-                    log.warning("/shift menu interaction expired before acknowledgement")
-                    return
-                raise
-            except discord.HTTPException as exc:
-                if getattr(exc, "code", None) != 40060:
-                    raise
-                log.debug("/shift menu interaction was acknowledged concurrently")
+        if not await acknowledge(interaction, ephemeral=True):
+            log.warning("/shift menu interaction expired before acknowledgement")
+            return
         try:
-            rows = await self.bot.db.list_shifts(interaction.guild.id, interaction.user.id, limit=100)
+            totals = await self.bot.db.shift_totals(interaction.guild.id, interaction.user.id)
             active = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
             cfg = await self.bot.guild_config(interaction.guild.id)
             await interaction.edit_original_response(
-                embed=build_shift_management_embed(interaction.user, rows),
+                embed=build_shift_management_embed(
+                    interaction.user,
+                    shift_count=int(totals["shift_count"] or 0) if totals else 0,
+                    total_seconds=int(totals["total_seconds"] or 0) if totals else 0,
+                    status=active["status"] if active else None,
+                ),
                 view=ShiftActionView(
                     active["status"] if active else None,
                     can_start=member_can_start_shift(interaction.user, cfg),
                 ),
             )
-        except discord.NotFound as exc:
-            if getattr(exc, "code", None) == 10062:
+        except discord.HTTPException as exc:
+            if getattr(exc, "code", None) in {10062, 40060}:
                 log.warning("/shift menu interaction expired while loading the response")
                 return
-            raise
-        except discord.HTTPException as exc:
-            if getattr(exc, "code", None) != 40060:
-                raise
-            log.debug("/shift menu response was already acknowledged")
+            log.exception("Could not build /shift menu for user %s", interaction.user.id)
+            await reply_interaction(interaction, error_embed("Unavailable"))
         except Exception:
             log.exception("Could not build /shift menu for user %s", interaction.user.id)
-            try:
-                await interaction.followup.send(
-                    embed=error_embed("Shift menu unavailable", "The shift data could not be loaded. Please try again."),
-                    ephemeral=True,
-                )
-            except discord.HTTPException:
-                pass
+            await reply_interaction(interaction, error_embed("Unavailable"))
 
     @shift.command(name="data", description="Show who is on duty.")
     async def data(self, interaction: discord.Interaction) -> None:
@@ -457,24 +403,26 @@ class Shifts(commands.Cog):
     @has_level(PermissionLevel.SUPERVISOR)
     async def admin(self, interaction: discord.Interaction, member: discord.Member) -> None:
         if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, error_embed("Guild only"))
+            return
+        if not await acknowledge(interaction, ephemeral=True):
+            log.warning("/shift admin interaction expired before acknowledgement")
             return
         rows = await self.bot.db.list_shifts(interaction.guild.id, member.id, limit=25)
-        await interaction.response.send_message(
+        await interaction.edit_original_response(
             embed=admin_shift_embed(member, rows),
             view=AdminShiftView(self.bot, member, rows),
-            ephemeral=True,
         )
 
 
 async def _admin_reply(interaction: discord.Interaction, result) -> None:
     bot: WSPBot = interaction.client  # type: ignore[assignment]
     if result.error:
-        await interaction.response.send_message(embed=error_embed("Shift admin", result.error), ephemeral=True)
+        await reply_interaction(interaction, error_embed("Shift admin", result.error))
         return
     if interaction.guild and result.log:
         await bot.notify(interaction.guild, "shift_log", result.log)
-    await interaction.response.send_message(embed=result.notice, ephemeral=True)
+    await reply_interaction(interaction, result.notice)
 
 
 async def setup(bot: WSPBot) -> None:
