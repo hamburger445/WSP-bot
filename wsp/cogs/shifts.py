@@ -399,14 +399,24 @@ class Shifts(commands.Cog):
 
     @shift.command(name="leaderboard", description="Show duty time standings.")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
+        # Acknowledge immediately. If Discord has already expired the interaction,
+        # there is nothing useful left for the bot to send, so fail quietly.
         if not await acknowledge(interaction, ephemeral=False):
-            log.warning("/shift leaderboard interaction expired before acknowledgement")
             return
         if not interaction.guild:
             await reply_interaction(interaction, error_embed("Guild only"))
             return
-        embed = await build_leaderboard(self.bot, interaction.guild)
-        await interaction.edit_original_response(embed=embed)
+        try:
+            embed = await build_leaderboard(self.bot, interaction.guild)
+            await interaction.edit_original_response(embed=embed)
+        except discord.NotFound:
+            return
+        except discord.HTTPException as exc:
+            if getattr(exc, "code", None) in {10062, 40060}:
+                return
+            log.exception("Could not display /shift leaderboard")
+        except Exception:
+            log.exception("Could not build /shift leaderboard")
 
     @shift.command(name="history", description="View shift history.")
     async def history(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
