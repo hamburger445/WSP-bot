@@ -294,6 +294,26 @@ def now_ts() -> int:
     return int(datetime.now(timezone.utc).timestamp())
 
 
+_SHIFT_DURATION_SQL = """
+    CASE
+      WHEN COALESCE(duration_seconds, 0) > 0 THEN duration_seconds
+      WHEN end_time IS NOT NULL THEN MAX(0, end_time - start_time - COALESCE(paused_seconds, 0))
+      ELSE 0
+    END
+"""
+_SHIFT_GUILD_SQL = "TRIM(CAST(guild_id AS TEXT)) = TRIM(CAST(? AS TEXT))"
+_SHIFT_USER_SQL = "TRIM(CAST(discord_id AS TEXT)) = TRIM(CAST(? AS TEXT))"
+_SHIFT_FINISHED_SQL = """
+    (
+      lower(trim(COALESCE(status, ''))) IN ('completed', 'complete', 'ended', 'closed', 'done')
+      OR (
+        lower(trim(COALESCE(status, ''))) NOT IN ('active', 'paused')
+        AND (COALESCE(duration_seconds, 0) > 0 OR end_time IS NOT NULL)
+      )
+    )
+"""
+
+
 class Database:
     def __init__(self, path: Path, backups_dir: Path) -> None:
         self.path = path
@@ -308,10 +328,11 @@ class Database:
 
     async def connect(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = await aiosqlite.connect(self.path)
+        self._db = await aiosqlite.connect(self.path, timeout=30)
         self._db.row_factory = aiosqlite.Row
         await self._db.execute("PRAGMA foreign_keys = ON")
         await self._db.execute("PRAGMA journal_mode = WAL")
+        await self._db.execute("PRAGMA busy_timeout = 30000")
         await self._db.executescript(SCHEMA)
         await self._db.commit()
         log.info("Database ready at %s", self.path)
@@ -755,7 +776,7 @@ class Database:
     # ── shifts ──────────────────────────────────────────────
     async def active_shift(self, guild_id: int, discord_id: int) -> aiosqlite.Row | None:
         return await self.fetchone(
-            "SELECT * FROM shifts WHERE guild_id = ? AND discord_id = ? AND status IN ('active', 'paused')",
+            "SELECT * FROM shifts WHERE TRIM(CAST(guild_id AS TEXT)) = TRIM(CAST(? AS TEXT)) AND TRIM(CAST(discord_id AS TEXT)) = TRIM(CAST(? AS TEXT)) AND status IN ('active', 'paused')",
             (str(guild_id), str(discord_id)),
         )
 
@@ -780,11 +801,11 @@ class Database:
     async def list_shifts(self, guild_id: int, discord_id: int | None = None, limit: int = 25) -> list[aiosqlite.Row]:
         if discord_id:
             return await self.fetchall(
-                "SELECT * FROM shifts WHERE guild_id = ? AND discord_id = ? ORDER BY start_time DESC LIMIT ?",
+                "SELECT * FROM shifts WHERE TRIM(CAST(guild_id AS TEXT)) = TRIM(CAST(? AS TEXT)) AND TRIM(CAST(discord_id AS TEXT)) = TRIM(CAST(? AS TEXT)) ORDER BY start_time DESC LIMIT ?",
                 (str(guild_id), str(discord_id), limit),
             )
         return await self.fetchall(
-            "SELECT * FROM shifts WHERE guild_id = ? ORDER BY start_time DESC LIMIT ?",
+            "SELECT * FROM shifts WHERE TRIM(CAST(guild_id AS TEXT)) = TRIM(CAST(? AS TEXT)) ORDER BY start_time DESC LIMIT ?",
             (str(guild_id), limit),
         )
 
@@ -793,7 +814,7 @@ class Database:
 
     async def list_active_shifts(self, guild_id: int) -> list[aiosqlite.Row]:
         return await self.fetchall(
-            "SELECT * FROM shifts WHERE guild_id = ? AND status IN ('active', 'paused') ORDER BY start_time",
+            "SELECT * FROM shifts WHERE TRIM(CAST(guild_id AS TEXT)) = TRIM(CAST(? AS TEXT)) AND status IN ('active', 'paused') ORDER BY start_time",
             (str(guild_id),),
         )
 
@@ -812,13 +833,61 @@ class Database:
             )
         return int(cur.rowcount or 0)
 
+    def effective_shift_seconds(self, row: aiosqlite.Row) -> int:
+        stored = int(row["duration_seconds"] or 0)
+        if stored > 0:
+            return stored
+        start = int(row["start_time"] or 0)
+        end = int(row["end_time"] or now_ts())
+        paused = int(row["paused_seconds"] or 0)
+        if row["status"] == "paused" and row["pause_started"]:
+            paused += max(0, now_ts() - int(row["pause_started"]))
+        return max(0, end - start - paused)
+
+    async def repair_shift_records(self, guild_id: int, *, remap_all: bool = False) -> None:
+        gid = str(guild_id)
+        await self.execute(
+            "UPDATE shifts SET guild_id = ? WHERE guild_id IS NULL OR TRIM(CAST(guild_id AS TEXT)) IN ('', '0')",
+            (gid,),
+        )
+        if remap_all:
+            others = await self.fetchall(
+                "SELECT DISTINCT guild_id FROM shifts WHERE CAST(guild_id AS TEXT) != ?",
+                (gid,),
+            )
+            for row in others:
+                await self.execute(
+                    "UPDATE shifts SET guild_id = ? WHERE CAST(guild_id AS TEXT) = ?",
+                    (gid, str(row["guild_id"])),
+                )
+        await self.execute(
+            """
+            UPDATE shifts
+            SET duration_seconds = MAX(0, COALESCE(end_time, start_time) - start_time - COALESCE(paused_seconds, 0))
+            WHERE end_time IS NOT NULL
+              AND lower(trim(COALESCE(status, ''))) NOT IN ('active', 'paused')
+              AND (duration_seconds IS NULL OR duration_seconds = 0)
+            """
+        )
+        await self.execute(
+            """
+            UPDATE shifts
+            SET status = 'completed'
+            WHERE lower(trim(COALESCE(status, ''))) IN ('complete', 'ended', 'closed', 'done')
+            """
+        )
+        await self.execute("UPDATE shifts SET guild_id = TRIM(CAST(guild_id AS TEXT)) WHERE guild_id IS NOT NULL")
+        await self.execute("UPDATE shifts SET discord_id = TRIM(CAST(discord_id AS TEXT)) WHERE discord_id IS NOT NULL")
+
     async def shift_totals(self, guild_id: int, discord_id: int) -> aiosqlite.Row | None:
         return await self.fetchone(
-            """
+            f"""
             SELECT COUNT(*) AS shift_count,
-                   COALESCE(SUM(duration_seconds), 0) AS total_seconds
+                   COALESCE(SUM({_SHIFT_DURATION_SQL}), 0) AS total_seconds
             FROM shifts
-            WHERE guild_id = ? AND discord_id = ? AND status = 'completed'
+            WHERE {_SHIFT_GUILD_SQL}
+              AND {_SHIFT_USER_SQL}
+              AND {_SHIFT_FINISHED_SQL}
             """,
             (str(guild_id), str(discord_id)),
         )
@@ -826,10 +895,12 @@ class Database:
     async def shift_leaderboard(self, guild_id: int, since: int | None = None, limit: int = 15) -> list[aiosqlite.Row]:
         if since:
             return await self.fetchall(
-                """
-                SELECT discord_id, COALESCE(SUM(duration_seconds), 0) AS total_seconds, COUNT(*) AS shift_count
+                f"""
+                SELECT discord_id, COALESCE(SUM({_SHIFT_DURATION_SQL}), 0) AS total_seconds, COUNT(*) AS shift_count
                 FROM shifts
-                WHERE guild_id = ? AND status = 'completed' AND start_time >= ?
+                WHERE {_SHIFT_GUILD_SQL}
+                  AND {_SHIFT_FINISHED_SQL}
+                  AND start_time >= ?
                 GROUP BY discord_id
                 ORDER BY total_seconds DESC
                 LIMIT ?
@@ -837,24 +908,17 @@ class Database:
                 (str(guild_id), since, limit),
             )
         return await self.fetchall(
-            """
-            SELECT discord_id, COALESCE(SUM(duration_seconds), 0) AS total_seconds, COUNT(*) AS shift_count
+            f"""
+            SELECT discord_id, COALESCE(SUM({_SHIFT_DURATION_SQL}), 0) AS total_seconds, COUNT(*) AS shift_count
             FROM shifts
-            WHERE guild_id = ? AND status = 'completed'
+            WHERE {_SHIFT_GUILD_SQL}
+              AND {_SHIFT_FINISHED_SQL}
             GROUP BY discord_id
             ORDER BY total_seconds DESC
             LIMIT ?
             """,
             (str(guild_id), limit),
         )
-
-    def effective_shift_seconds(self, row: aiosqlite.Row) -> int:
-        start = int(row["start_time"])
-        end = int(row["end_time"] or now_ts())
-        paused = int(row["paused_seconds"] or 0)
-        if row["status"] == "paused" and row["pause_started"]:
-            paused += max(0, now_ts() - int(row["pause_started"]))
-        return max(0, end - start - paused)
 
     # ── quota ───────────────────────────────────────────────
     def week_start_ts(self, tz_name: str, at: datetime | None = None) -> int:

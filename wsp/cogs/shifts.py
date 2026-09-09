@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from wsp.constants import PermissionLevel
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
-from wsp.permissions import has_level, resolve_level
+from wsp.permissions import resolve_level
 from wsp.utils import current_shift_seconds, hms_to_seconds, member_can_start_shift, mention_or_id, sync_duty_role
 from wsp.views.shifts import (
     ShiftActionView,
@@ -33,9 +33,29 @@ if TYPE_CHECKING:
 log = logging.getLogger("wsp.shifts")
 
 
+def _completed_seconds(row) -> int:
+    stored = int(row["duration_seconds"] or 0)
+    if stored > 0:
+        return stored
+    start = int(row["start_time"] or 0)
+    end = int(row["end_time"] or 0)
+    if not end:
+        return 0
+    return max(0, end - start - int(row["paused_seconds"] or 0))
+
+
+def _is_finished_shift(row) -> bool:
+    status = str(row["status"] or "").strip().lower()
+    if status in {"active", "paused"}:
+        return False
+    if status in {"completed", "complete", "ended", "closed", "done"}:
+        return True
+    return _completed_seconds(row) > 0
+
+
 def admin_shift_embed(member: discord.Member, rows) -> discord.Embed:
-    completed = [row for row in rows if row["status"] == "completed"]
-    total_seconds = sum(int(row["duration_seconds"] or 0) for row in completed)
+    completed = [row for row in rows if _is_finished_shift(row)]
+    total_seconds = sum(_completed_seconds(row) for row in completed)
     average = total_seconds // len(completed) if completed else 0
     shift_type = next((row["rank_name"] for row in rows if row["rank_name"]), None) or "Trooper"
     embed = base_embed(f"Shift Management: {member}", "")
@@ -141,7 +161,7 @@ class AdminShiftView(discord.ui.View):
             discord.SelectOption(
                 label=f"Shift #{row['id']} - {row['status']}",
                 value=str(row["id"]),
-                description=f"{format_duration(row['duration_seconds'] or current_shift_seconds(row))} • {ts_rel(row['start_time'])}",
+                description=f"{format_duration(self.bot.db.effective_shift_seconds(row))} • {ts_rel(row['start_time'])}",
             )
             for row in self.rows[:25]
         ]
@@ -311,11 +331,11 @@ class Shifts(commands.Cog):
 
     @shift.command(name="menu", description="View your current shift status.")
     async def menu(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            await reply_interaction(interaction, error_embed("Guild only"))
-            return
         if not await acknowledge(interaction, ephemeral=False):
             log.warning("/shift menu interaction expired before acknowledgement")
+            return
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            await reply_interaction(interaction, error_embed("Guild only"))
             return
         try:
             totals = await self.bot.db.shift_totals(interaction.guild.id, interaction.user.id)
@@ -346,15 +366,22 @@ class Shifts(commands.Cog):
 
     @shift.command(name="data", description="Show who is on duty.")
     async def data(self, interaction: discord.Interaction) -> None:
+        if not await acknowledge(interaction, ephemeral=False):
+            log.warning("/shift data interaction expired before acknowledgement")
+            return
         if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, error_embed("Guild only"))
             return
         embed = await build_duty_board(self.bot, interaction.guild)
-        await interaction.response.send_message(embed=embed, view=ShiftMenuView())
+        await interaction.edit_original_response(embed=embed, view=ShiftMenuView())
 
     @shift.command(name="status", description="Show who is on duty.")
     async def status(self, interaction: discord.Interaction) -> None:
+        if not await acknowledge(interaction, ephemeral=False):
+            log.warning("/shift status interaction expired before acknowledgement")
+            return
         if not interaction.guild:
+            await reply_interaction(interaction, error_embed("Guild only"))
             return
         rows = await self.bot.db.list_active_shifts(interaction.guild.id)
         embed = base_embed("Active shifts")
@@ -368,26 +395,31 @@ class Shifts(commands.Cog):
                     f"{row['status']} • {format_duration(current_shift_seconds(row))} • started {ts_rel(row['start_time'])}"
                 )
             embed.description = "\n".join(lines)[:4000]
-        await interaction.response.send_message(embed=embed)
+        await interaction.edit_original_response(embed=embed)
 
     @shift.command(name="leaderboard", description="Show duty time standings.")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
+        if not await acknowledge(interaction, ephemeral=False):
+            log.warning("/shift leaderboard interaction expired before acknowledgement")
+            return
         if not interaction.guild:
+            await reply_interaction(interaction, error_embed("Guild only"))
             return
         embed = await build_leaderboard(self.bot, interaction.guild)
-        await interaction.response.send_message(embed=embed)
+        await interaction.edit_original_response(embed=embed)
 
     @shift.command(name="history", description="View shift history.")
     async def history(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+        if not await acknowledge(interaction, ephemeral=True):
+            log.warning("/shift history interaction expired before acknowledgement")
+            return
         if not interaction.guild:
+            await reply_interaction(interaction, error_embed("Guild only"))
             return
         target = member or interaction.user
         if member and member.id != interaction.user.id:
             if await resolve_level(interaction) < PermissionLevel.SUPERVISOR:
-                await interaction.response.send_message(
-                    embed=error_embed("Restricted"),
-                    ephemeral=True,
-                )
+                await reply_interaction(interaction, error_embed("Restricted"))
                 return
         rows = await self.bot.db.list_shifts(interaction.guild.id, target.id, limit=12)
         totals = await self.bot.db.shift_totals(interaction.guild.id, target.id)
@@ -395,19 +427,21 @@ class Shifts(commands.Cog):
         if totals:
             add_fields(embed, [("All-time", format_duration(totals["total_seconds"]), True), ("Shifts", str(totals["shift_count"]), True)])
         embed.description = "\n".join(
-            f"`#{r['id']}` {r['status']} {r['callsign'] or ''} {format_duration(r['duration_seconds'] or current_shift_seconds(r))} {ts(r['start_time'])}"
+            f"`#{r['id']}` {r['status']} {r['callsign'] or ''} {format_duration(self.bot.db.effective_shift_seconds(r))} {ts(r['start_time'])}"
             for r in rows
         ) or "No records."
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.edit_original_response(embed=embed)
 
     @shift.command(name="admin", description="Open shift controls for a member.")
-    @has_level(PermissionLevel.SUPERVISOR)
     async def admin(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if not await acknowledge(interaction, ephemeral=True):
+            log.warning("/shift admin interaction expired before acknowledgement")
+            return
         if not interaction.guild:
             await reply_interaction(interaction, error_embed("Guild only"))
             return
-        if not await acknowledge(interaction, ephemeral=True):
-            log.warning("/shift admin interaction expired before acknowledgement")
+        if await resolve_level(interaction) < PermissionLevel.SUPERVISOR:
+            await reply_interaction(interaction, error_embed("Restricted"))
             return
         rows = await self.bot.db.list_shifts(interaction.guild.id, member.id, limit=25)
         await interaction.edit_original_response(

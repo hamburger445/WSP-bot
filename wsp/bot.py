@@ -18,6 +18,37 @@ from wsp.utils import member_from_id, sync_duty_role
 
 log = logging.getLogger("wsp.bot")
 
+PUBLIC_SLASH = frozenset({
+    "shift menu",
+    "shift data",
+    "shift status",
+    "shift leaderboard",
+    "ping",
+})
+
+
+class WSPCommandTree(app_commands.CommandTree):
+    """Defer as soon as Discord delivers the command so the 3-second window is not missed."""
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.type != discord.InteractionType.application_command:
+            return True
+        if interaction.response.is_done():
+            return True
+        name = ""
+        if interaction.command is not None:
+            name = interaction.command.qualified_name
+        try:
+            await interaction.response.defer(ephemeral=name not in PUBLIC_SLASH)
+        except discord.NotFound:
+            log.warning("Ignored expired Discord interaction for %s", name or "unknown")
+            return False
+        except discord.HTTPException as exc:
+            if getattr(exc, "code", None) not in {10062, 40060}:
+                raise
+            return interaction.response.is_done()
+        return True
+
 COG_MODULES = [
     "wsp.cogs.setup",
     "wsp.cogs.shifts",
@@ -37,7 +68,13 @@ class WSPBot(commands.Bot):
         intents.guilds = True
         intents.members = False
         intents.message_content = True
-        super().__init__(command_prefix="?", intents=intents, help_command=None, case_insensitive=True)
+        super().__init__(
+            command_prefix="?",
+            intents=intents,
+            help_command=None,
+            case_insensitive=True,
+            tree_cls=WSPCommandTree,
+        )
         self.settings = settings
         self.db = db
         self._config_cache: dict[int, GuildConfig] = {}
@@ -123,6 +160,7 @@ class WSPBot(commands.Bot):
             if cfg.apply_published_structure():
                 await self.save_config(guild.id, cfg)
             await self.db.ensure_ranks(guild.id, cfg)
+            await self.db.repair_shift_records(guild.id, remap_all=len(self.guilds) == 1)
             for row in await self.db.list_active_shifts(guild.id):
                 member = await member_from_id(self, guild, int(row["discord_id"]))
                 if member:
