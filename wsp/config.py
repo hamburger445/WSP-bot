@@ -60,7 +60,7 @@ class Settings:
         self.logs_dir = self.data_dir / "logs"
         self.github_token = _env("GITHUB_TOKEN") or _env("GH_TOKEN")
         self.github_repo = _env("GITHUB_REPO", "hamburger445/WSP-bot")
-        self.github_db_branch = _env("GITHUB_DB_BRANCH", "data")
+        self.github_db_branch = _env("GITHUB_DB_BRANCH", "main")
         self.github_db_path = _env("GITHUB_DB_PATH", "data/wsp.db")
 
     def ensure_directories(self) -> None:

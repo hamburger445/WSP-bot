@@ -1,4 +1,4 @@
-"""SQLite snapshot stored as a file on a GitHub branch."""
+"""SQLite snapshot stored as a file on GitHub."""
 
 from __future__ import annotations
 
@@ -25,12 +25,14 @@ class GitHubDatabase:
     def __init__(self, token: str, repo: str, branch: str, remote_path: str) -> None:
         self.token = token
         self.repo = repo.strip().removeprefix("https://github.com/").removesuffix(".git")
-        self.branch = branch or "data"
+        self.preferred_branch = (branch or "").strip()
+        self.branch = self.preferred_branch or "main"
         self.remote_path = remote_path.strip().lstrip("/") or "data/wsp.db"
         self._sha: str | None = None
         self._push_task: asyncio.Task | None = None
         self._db: Database | None = None
         self._debounce = 4.0
+        self._resolved_branch = False
 
     @classmethod
     def from_settings(cls, settings: Settings) -> GitHubDatabase | None:
@@ -80,7 +82,11 @@ class GitHubDatabase:
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(base64.b64decode(content.replace("\n", "")))
-        for extra in (dest.with_name(dest.name + "-wal"), dest.with_name(dest.name + "-shm"), dest.with_name(dest.name + "-journal")):
+        for extra in (
+            dest.with_name(dest.name + "-wal"),
+            dest.with_name(dest.name + "-shm"),
+            dest.with_name(dest.name + "-journal"),
+        ):
             extra.unlink(missing_ok=True)
         self._sha = payload.get("sha")
         log.info("Restored database from GitHub (%s bytes, sha=%s)", dest.stat().st_size, self._sha)
@@ -117,7 +123,7 @@ class GitHubDatabase:
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
-    def _request(self, method: str, url: str, body: dict | None = None) -> dict | None:
+    def _request(self, method: str, url: str, body: dict | None = None, *, allow_404: bool = False) -> dict | None:
         data = None if body is None else json.dumps(body).encode()
         req = Request(url, data=data, headers=self._headers(), method=method)
         if data is not None:
@@ -128,42 +134,52 @@ class GitHubDatabase:
                 return json.loads(raw.decode()) if raw else {}
         except HTTPError as exc:
             err = exc.read().decode(errors="replace")
-            if exc.code == 404:
+            if allow_404 and exc.code == 404:
                 return None
             raise RuntimeError(f"GitHub API {method} {url} failed ({exc.code}): {err}") from exc
 
     def _encoded_path(self) -> str:
-        return quote(self.remote_path)
+        return quote(self.remote_path, safe="/")
+
+    def _default_branch(self) -> str:
+        repo = self._request("GET", f"{API}/repos/{self.repo}", allow_404=True)
+        if not repo:
+            raise RuntimeError(f"GitHub repo {self.repo} was not found or the token cannot read it")
+        return str(repo.get("default_branch") or "main")
+
+    def _branch_exists(self, branch: str) -> bool:
+        ref = self._request(
+            "GET",
+            f"{API}/repos/{self.repo}/git/ref/heads/{quote(branch, safe='')}",
+            allow_404=True,
+        )
+        return bool(ref and ref.get("object", {}).get("sha"))
+
+    def _resolve_branch(self) -> None:
+        if self._resolved_branch:
+            return
+        default_branch = self._default_branch()
+        wanted = self.preferred_branch or default_branch
+        if wanted != default_branch and not self._branch_exists(wanted):
+            log.warning(
+                "GitHub branch %s does not exist and will not be created; using %s for the database file",
+                wanted,
+                default_branch,
+            )
+            wanted = default_branch
+        self.branch = wanted
+        self._resolved_branch = True
 
     def _get_file(self) -> dict | None:
-        url = f"{API}/repos/{self.repo}/contents/{self._encoded_path()}?ref={quote(self.branch)}"
-        payload = self._request("GET", url)
+        self._resolve_branch()
+        url = f"{API}/repos/{self.repo}/contents/{self._encoded_path()}?ref={quote(self.branch, safe='')}"
+        payload = self._request("GET", url, allow_404=True)
         if payload:
             self._sha = payload.get("sha")
         return payload
 
-    def _ensure_branch(self) -> None:
-        ref = self._request("GET", f"{API}/repos/{self.repo}/git/ref/heads/{quote(self.branch)}")
-        if ref is not None:
-            return
-        repo = self._request("GET", f"{API}/repos/{self.repo}")
-        if not repo:
-            raise RuntimeError(f"GitHub repo {self.repo} was not found")
-        default_branch = repo.get("default_branch") or "main"
-        head = self._request("GET", f"{API}/repos/{self.repo}/git/ref/heads/{quote(default_branch)}")
-        if not head or not head.get("object", {}).get("sha"):
-            raise RuntimeError(f"Could not read default branch {default_branch}")
-        created = self._request(
-            "POST",
-            f"{API}/repos/{self.repo}/git/refs",
-            {"ref": f"refs/heads/{self.branch}", "sha": head["object"]["sha"]},
-        )
-        if created is None:
-            raise RuntimeError(f"Could not create GitHub branch {self.branch}")
-        log.info("Created GitHub branch %s", self.branch)
-
     def _put_file(self, data: bytes) -> None:
-        self._ensure_branch()
+        self._resolve_branch()
         if not self._sha:
             current = self._get_file()
             if current:
@@ -176,7 +192,20 @@ class GitHubDatabase:
         if self._sha:
             body["sha"] = self._sha
         url = f"{API}/repos/{self.repo}/contents/{self._encoded_path()}"
-        result = self._request("PUT", url, body)
+        try:
+            result = self._request("PUT", url, body)
+        except RuntimeError as exc:
+            text = str(exc)
+            if "409" in text or "422" in text:
+                current = self._get_file()
+                if current:
+                    self._sha = current.get("sha")
+                    body["sha"] = self._sha
+                    result = self._request("PUT", url, body)
+                else:
+                    raise
+            else:
+                raise
         if not result:
             raise RuntimeError("GitHub did not accept the database upload")
         content = result.get("content") or {}
