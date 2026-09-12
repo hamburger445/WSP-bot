@@ -58,6 +58,10 @@ class Settings:
         self.backups_dir = self.data_dir / "backups"
         self.transcripts_dir = self.data_dir / "transcripts"
         self.logs_dir = self.data_dir / "logs"
+        self.github_token = _env("GITHUB_TOKEN") or _env("GH_TOKEN")
+        self.github_repo = _env("GITHUB_REPO", "hamburger445/WSP-bot")
+        self.github_db_branch = _env("GITHUB_DB_BRANCH", "data")
+        self.github_db_path = _env("GITHUB_DB_PATH", "data/wsp.db")
 
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -195,6 +199,11 @@ class GuildConfig:
         current_loa = str((self._data.get("channels") or {}).get("loa") or "")
         if wanted_loa and current_loa != wanted_loa:
             self.set_path(["channels", "loa"], wanted_loa)
+            changed = True
+        wanted_academy = str((defaults.get("channels") or {}).get("academy") or "")
+        current_academy = str((self._data.get("channels") or {}).get("academy") or "")
+        if wanted_academy and current_academy != wanted_academy:
+            self.set_path(["channels", "academy"], wanted_academy)
             changed = True
         quota_defaults = defaults.get("quota") or {}
         quota = self._data.setdefault("quota", {})

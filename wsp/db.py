@@ -260,6 +260,24 @@ CREATE TABLE IF NOT EXISTS vehicles (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS academy_sticky (
+    channel_id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS academy_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    discord_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    hire_date INTEGER NOT NULL,
+    deadline INTEGER NOT NULL,
+    created_by TEXT NOT NULL,
+    message_id TEXT,
+    created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS activity_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id TEXT NOT NULL,
@@ -319,6 +337,7 @@ class Database:
         self.path = path
         self.backups_dir = backups_dir
         self._db: aiosqlite.Connection | None = None
+        self.on_change = None
 
     @property
     def conn(self) -> aiosqlite.Connection:
@@ -373,6 +392,9 @@ class Database:
     async def execute(self, sql: str, params: tuple | list = ()) -> aiosqlite.Cursor:
         cur = await self.conn.execute(sql, params)
         await self.conn.commit()
+        callback = self.on_change
+        if callback is not None:
+            callback()
         return cur
 
     async def fetchone(self, sql: str, params: tuple | list = ()) -> aiosqlite.Row | None:
@@ -1268,3 +1290,67 @@ class Database:
             "loa": int(loa["c"]) if loa else 0,
             "pending_loa": int(pending["c"]) if pending else 0,
         }
+
+    # ── academy tracking ────────────────────────────────────
+    async def get_academy_sticky(self, channel_id: int) -> int:
+        row = await self.fetchone(
+            "SELECT message_id FROM academy_sticky WHERE channel_id = ?",
+            (str(channel_id),),
+        )
+        if not row:
+            return 0
+        try:
+            return int(row["message_id"])
+        except (TypeError, ValueError):
+            return 0
+
+    async def set_academy_sticky(self, channel_id: int, message_id: int) -> None:
+        await self.execute(
+            """
+            INSERT INTO academy_sticky (channel_id, message_id, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(channel_id) DO UPDATE SET
+                message_id = excluded.message_id,
+                updated_at = excluded.updated_at
+            """,
+            (str(channel_id), str(message_id), now_ts()),
+        )
+
+    async def clear_academy_sticky(self, channel_id: int) -> None:
+        await self.execute("DELETE FROM academy_sticky WHERE channel_id = ?", (str(channel_id),))
+
+    async def create_academy_log(
+        self,
+        guild_id: int,
+        discord_id: int,
+        username: str,
+        hire_date: int,
+        deadline: int,
+        created_by: int,
+        message_id: int | None = None,
+    ) -> int:
+        cur = await self.execute(
+            """
+            INSERT INTO academy_logs (
+                guild_id, discord_id, username, hire_date, deadline, created_by, message_id, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(guild_id),
+                str(discord_id),
+                username,
+                hire_date,
+                deadline,
+                str(created_by),
+                str(message_id) if message_id else None,
+                now_ts(),
+            ),
+        )
+        return int(cur.lastrowid or 0)
+
+    async def set_academy_log_message(self, log_id: int, message_id: int) -> None:
+        await self.execute(
+            "UPDATE academy_logs SET message_id = ? WHERE id = ?",
+            (str(message_id), log_id),
+        )

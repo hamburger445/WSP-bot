@@ -10,6 +10,7 @@ import discord
 from wsp.bot import WSPBot
 from wsp.config import Settings
 from wsp.db import Database
+from wsp.github_db import GitHubDatabase
 from wsp.logging_setup import setup_logging
 
 log = logging.getLogger("wsp")
@@ -21,7 +22,12 @@ async def run() -> None:
     setup_logging(settings.log_level, settings.logs_dir)
 
     db = Database(settings.database_path, settings.backups_dir)
+    github_db = GitHubDatabase.from_settings(settings)
+    if github_db is not None:
+        await github_db.restore(settings.database_path)
     await db.connect()
+    if github_db is not None:
+        github_db.bind(db)
     bot = WSPBot(settings, db)
     stop = asyncio.Event()
     shutting_down = False
@@ -34,6 +40,11 @@ async def run() -> None:
         shutting_down = True
         stop.set()
         log.info("Stop signal received — saving the database and closing Discord")
+        try:
+            if github_db is not None:
+                await github_db.flush()
+        except Exception:
+            log.exception("GitHub database flush failed")
         try:
             await db.backup()
         except Exception:

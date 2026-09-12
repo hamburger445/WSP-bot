@@ -48,6 +48,7 @@ STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/loa admin` — manage leave",
         "`/dashboard` — dashboard",
         "`/say` — send a message",
+        "Academy channel — create 30-day cadet tracking logs",
     ]),
     ("Setup", "Server", [
         "`/setupserver` — set up the server",
