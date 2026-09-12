@@ -11,8 +11,8 @@ from wsp.views.academy import (
     academy_channel_id,
     ensure_academy_sticky,
     is_sending_sticky,
-    is_sticky_message,
     restick_academy,
+    should_ignore_sticky_delete,
 )
 
 if TYPE_CHECKING:
@@ -22,13 +22,19 @@ if TYPE_CHECKING:
 class Academy(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
+        self._ensured = False
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
+        if self._ensured:
+            return
+        self._ensured = True
         await ensure_academy_sticky(self.bot)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
+        if message.author.bot:
+            return
         channel = message.channel
         if not isinstance(channel, discord.TextChannel):
             return
@@ -37,11 +43,6 @@ class Academy(commands.Cog):
             return
         if is_sending_sticky(channel.id):
             return
-        stored_id = await self.bot.db.get_academy_sticky(channel.id)
-        if stored_id and message.id == stored_id:
-            return
-        if is_sticky_message(self.bot, message):
-            return
         await restick_academy(self.bot, channel)
 
     @commands.Cog.listener()
@@ -49,6 +50,8 @@ class Academy(commands.Cog):
         if payload.channel_id != academy_channel_id(self.bot, payload.guild_id or 0):
             return
         if is_sending_sticky(payload.channel_id):
+            return
+        if should_ignore_sticky_delete(payload.message_id):
             return
         stored_id = await self.bot.db.get_academy_sticky(payload.channel_id)
         if stored_id and payload.message_id == stored_id:

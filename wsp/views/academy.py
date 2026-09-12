@@ -23,6 +23,7 @@ CREATE_BUTTON_ID = "wsp:academy:create"
 
 _restick_locks: dict[int, asyncio.Lock] = {}
 _sending_sticky: set[int] = set()
+_ignore_delete_ids: set[int] = set()
 
 
 def sticky_embed() -> discord.Embed:
@@ -73,14 +74,27 @@ def is_sending_sticky(channel_id: int) -> bool:
     return channel_id in _sending_sticky
 
 
+def should_ignore_sticky_delete(message_id: int) -> bool:
+    return message_id in _ignore_delete_ids
+
+
+def _component_custom_ids(message: discord.Message) -> set[str]:
+    ids: set[str] = set()
+    for row in message.components:
+        children = getattr(row, "children", None)
+        if children is None and hasattr(row, "components"):
+            children = row.components
+        for child in children or []:
+            custom_id = getattr(child, "custom_id", None)
+            if custom_id:
+                ids.add(custom_id)
+    return ids
+
+
 def is_sticky_message(bot: WSPBot, message: discord.Message) -> bool:
     if not bot.user or message.author.id != bot.user.id:
         return False
-    if not message.embeds:
-        return False
-    if message.embeds[0].title != "WSP Academy 30-Day Tracking":
-        return False
-    return bool(message.components)
+    return CREATE_BUTTON_ID in _component_custom_ids(message)
 
 
 async def sticky_channel(bot: WSPBot, guild: discord.Guild | None = None) -> discord.TextChannel | None:
@@ -97,23 +111,40 @@ async def sticky_channel(bot: WSPBot, guild: discord.Guild | None = None) -> dis
     return None
 
 
+async def _delete_sticky_message(message: discord.Message) -> None:
+    _ignore_delete_ids.add(message.id)
+    try:
+        await message.delete()
+    except discord.NotFound:
+        pass
+    except discord.HTTPException:
+        log.exception("Could not delete academy sticky %s", message.id)
+    finally:
+        _ignore_delete_ids.discard(message.id)
+
+
+async def _purge_sticky_panels(bot: WSPBot, channel: discord.TextChannel, keep_id: int = 0) -> None:
+    stored_id = await bot.db.get_academy_sticky(channel.id)
+    targets = {stored_id, keep_id}
+    try:
+        async for message in channel.history(limit=30):
+            if keep_id and message.id == keep_id:
+                continue
+            if is_sticky_message(bot, message) or message.id in targets:
+                await _delete_sticky_message(message)
+    except discord.HTTPException:
+        log.exception("Could not scan academy channel %s for duplicate stickies", channel.id)
+
+
 async def restick_academy(bot: WSPBot, channel: discord.TextChannel | None = None) -> discord.Message | None:
     if channel is None:
         channel = await sticky_channel(bot)
     if channel is None:
         return None
     async with _lock_for(channel.id):
-        previous_id = await bot.db.get_academy_sticky(channel.id)
-        if previous_id:
-            try:
-                previous = await channel.fetch_message(previous_id)
-                await previous.delete()
-            except discord.NotFound:
-                pass
-            except discord.HTTPException:
-                log.exception("Could not delete academy sticky %s", previous_id)
         _sending_sticky.add(channel.id)
         try:
+            await _purge_sticky_panels(bot, channel)
             posted = await channel.send(embed=sticky_embed(), view=AcademyStickyView())
             await bot.db.set_academy_sticky(channel.id, posted.id)
             return posted
@@ -195,6 +226,7 @@ class AcademyRecruitView(discord.ui.View):
         else:
             await interaction.followup.send("Created", ephemeral=True)
         self.stop()
+        await restick_academy(bot, channel)
 
 
 class AcademyStickyView(discord.ui.View):
