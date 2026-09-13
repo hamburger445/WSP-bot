@@ -8,7 +8,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from wsp.constants import PermissionLevel
+from wsp.constants import COLOR_NAVY, PermissionLevel
+from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, success_embed
 from wsp.permissions import has_level, resolve_level
 from wsp.utils import member_from_id, mention_or_id, quota_required_minutes, reply_interaction
@@ -149,6 +150,103 @@ class Quota(commands.Cog):
             await reply_interaction(interaction, embed=embed, ephemeral=True)
             return
         await reply_interaction(interaction, embed=success_embed("Quota updated", "\n".join(changed)), ephemeral=True)
+
+    @quota.command(name="report", description="Show who completed quota this week and who did not.")
+    @has_level(PermissionLevel.HR)
+    async def report(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
+            return
+        embed = await build_quota_report(self.bot, interaction.guild)
+        await reply_interaction(interaction, embed=embed, ephemeral=True)
+
+
+async def build_quota_report(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
+    cfg = await bot.guild_config(guild.id)
+    week = bot.db.week_start_ts(cfg.get("timezone") or "America/Chicago")
+    week_id = await bot.db.ensure_week(guild.id, week)
+    records = {
+        str(row["discord_id"]): row
+        for row in await bot.db.list_quota_records(week_id)
+        if row["quota_type"] == "duty"
+    }
+    personnel = list(await bot.db.list_personnel(guild.id, "active"))
+    loa_ids: set[str] = set()
+    now = now_ts()
+    for row in await bot.db.list_loa(guild.id, "approved"):
+        if int(row["start_date"]) <= now <= int(row["end_date"]):
+            loa_ids.add(str(row["discord_id"]))
+    seen: set[str] = set()
+    met: list[str] = []
+    missed: list[str] = []
+    exempt: list[str] = []
+    for person in personnel:
+        discord_id = str(person["discord_id"])
+        seen.add(discord_id)
+        _classify_quota_row(
+            guild,
+            discord_id,
+            records.get(discord_id),
+            person,
+            loa_ids,
+            cfg,
+            met,
+            missed,
+            exempt,
+        )
+    for discord_id, row in records.items():
+        if discord_id in seen:
+            continue
+        _classify_quota_row(guild, discord_id, row, None, loa_ids, cfg, met, missed, exempt)
+    embed = base_embed("Quota report  •  this week", color=COLOR_NAVY)
+    embed.add_field(name=f"Completed ({len(met)})", value=_clip_lines(met), inline=False)
+    embed.add_field(name=f"Not completed ({len(missed)})", value=_clip_lines(missed), inline=False)
+    embed.add_field(name=f"Exempt ({len(exempt)})", value=_clip_lines(exempt), inline=False)
+    embed.set_footer(text="Quota resets every Monday.")
+    return embed
+
+
+def _classify_quota_row(
+    guild: discord.Guild,
+    discord_id: str,
+    row,
+    person,
+    loa_ids: set[str],
+    cfg,
+    met: list[str],
+    missed: list[str],
+    exempt: list[str],
+) -> None:
+    member = guild.get_member(int(discord_id)) if discord_id.isdigit() else None
+    rank_name = person["rank_name"] if person else None
+    required = quota_required_minutes(member, cfg, rank_name)
+    done = int(row["completed_minutes"]) if row else 0
+    if row and row["required_minutes"] not in (None, ""):
+        required = int(row["required_minutes"] or required)
+    label = f"{mention_or_id(guild, discord_id)} — {done}/{required} min"
+    status = str(row["status"] or "").lower() if row else ""
+    if discord_id in loa_ids or (person and person["quota_exempt"]) or status in {"exempt_loa", "exempt"}:
+        exempt.append(label)
+        return
+    if required > 0 and done >= required:
+        met.append(label)
+        return
+    missed.append(label)
+
+
+def _clip_lines(lines: list[str]) -> str:
+    if not lines:
+        return "None"
+    kept: list[str] = []
+    used = 0
+    for line in lines:
+        extra = len(line) + 1
+        if used + extra > 980:
+            kept.append(f"… +{len(lines) - len(kept)} more")
+            break
+        kept.append(line)
+        used += extra
+    return "\n".join(kept)
 
 
 def _status(done: int, required: int) -> str:

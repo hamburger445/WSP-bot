@@ -411,8 +411,14 @@ async def acknowledge(interaction: discord.Interaction, *, ephemeral: bool = Fal
         raise
 
 
-async def reply_interaction(interaction: discord.Interaction, embed: discord.Embed, *, ephemeral: bool = True) -> None:
-    await send_slash_reply(interaction, embed=embed, ephemeral=ephemeral)
+async def reply_interaction(
+    interaction: discord.Interaction,
+    embed: discord.Embed,
+    *,
+    ephemeral: bool = True,
+    view: discord.ui.View | None = None,
+) -> None:
+    await send_slash_reply(interaction, embed=embed, ephemeral=ephemeral, view=view)
 
 
 async def _send_personal_controls(interaction: discord.Interaction) -> None:

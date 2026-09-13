@@ -10,8 +10,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import PermissionLevel
-from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
-from wsp.permissions import resolve_level
+from wsp.cogs.dashboard import ConfirmShiftResetView
+from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel, warning_embed
+from wsp.permissions import has_level, resolve_level
 from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, sync_duty_role
 from wsp.views.shifts import (
     ShiftMenuView,
@@ -442,6 +443,18 @@ class Shifts(commands.Cog):
         await interaction.edit_original_response(
             embed=admin_shift_embed(member, rows),
             view=AdminShiftView(self.bot, member, rows),
+        )
+
+    @shift.command(name="reset", description="Reset all shift data. HR only.")
+    @has_level(PermissionLevel.HR)
+    async def reset(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await reply_interaction(interaction, error_embed("Guild only"))
+            return
+        await reply_interaction(
+            interaction,
+            warning_embed("Reset shift data?", "This cannot be undone."),
+            view=ConfirmShiftResetView(),
         )
 
 

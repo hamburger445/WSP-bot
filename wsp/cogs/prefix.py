@@ -9,10 +9,10 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import PermissionLevel
-from wsp.cogs.dashboard import overview_embed, DashboardView
+from wsp.cogs.dashboard import ConfirmShiftResetView, DashboardView, overview_embed
 from wsp.cogs.help import HelpView, _catalog_embed
-from wsp.cogs.quota import Quota
-from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
+from wsp.cogs.quota import Quota, build_quota_report
+from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel, warning_embed
 from wsp.ops import change_rank, fire_member
 from wsp.permissions import is_owner, prefix_has_level, prefix_is_owner, resolve_user_level
 from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, quota_required_minutes, reply_interaction, sync_duty_role
@@ -260,6 +260,14 @@ class Prefix(commands.Cog):
         ) or "No records."
         await ctx.send(embed=embed)
 
+    @shift_grp.command(name="reset")
+    @prefix_has_level(PermissionLevel.HR)
+    async def shift_reset(self, ctx: commands.Context) -> None:
+        await ctx.send(
+            embed=warning_embed("Reset shift data?", "This cannot be undone."),
+            view=ConfirmShiftResetView(),
+        )
+
     @shift_grp.group(name="admin", invoke_without_command=True)
     @prefix_has_level(PermissionLevel.SUPERVISOR)
     async def shift_admin(self, ctx: commands.Context) -> None:
@@ -385,6 +393,13 @@ class Prefix(commands.Cog):
                 for r in sorted(rows, key=lambda r: int(r["completed_minutes"]), reverse=True)[:20]
             )
         await ctx.send(embed=embed)
+
+    @quota_grp.command(name="report")
+    @prefix_has_level(PermissionLevel.HR)
+    async def quota_report(self, ctx: commands.Context) -> None:
+        if ctx.guild is None:
+            return
+        await ctx.send(embed=await build_quota_report(self.bot, ctx.guild))
 
     @quota_grp.command(name="admin")
     @prefix_has_level(PermissionLevel.HR)

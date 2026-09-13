@@ -81,6 +81,9 @@ class ConfirmShiftResetView(discord.ui.View):
 
     @discord.ui.button(label="Confirm reset", style=discord.ButtonStyle.danger)
     async def confirm(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if await resolve_level(interaction) < PermissionLevel.HR:
+            await interaction.response.send_message(embed=error_embed("Restricted"), ephemeral=True)
+            return
         if not interaction.guild:
             await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
             return
