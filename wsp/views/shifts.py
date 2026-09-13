@@ -8,10 +8,18 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from wsp.constants import COLOR_NAVY, COLOR_SUCCESS
+from wsp.constants import COLOR_GOLD, COLOR_NAVY, COLOR_SUCCESS
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
-from wsp.utils import current_shift_seconds, ensure_personnel, member_can_start_shift, mention_or_id, reply_interaction as send_slash_reply, sync_duty_role
+from wsp.utils import (
+    current_shift_seconds,
+    ensure_personnel,
+    member_can_start_shift,
+    mention_or_id,
+    quota_required_minutes,
+    reply_interaction as send_slash_reply,
+    sync_duty_role,
+)
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -126,6 +134,67 @@ def build_shift_management_embed(
     )
     embed.add_field(name="Current Status", value=str(status) if status else "Off duty", inline=False)
     return embed
+
+
+def quota_progress_bar(percent: float, width: int = 12) -> str:
+    pct = max(0.0, min(100.0, percent))
+    filled = int(round(pct / 100 * width))
+    filled = min(width, max(0, filled))
+    return "█" * filled + "░" * (width - filled)
+
+
+async def build_quota_progress_embed(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.abc.User,
+    *,
+    active_row=None,
+) -> discord.Embed:
+    cfg = await bot.guild_config(guild.id)
+    week = bot.db.week_start_ts(cfg.get("timezone") or "America/Chicago")
+    week_id = await bot.db.ensure_week(guild.id, week)
+    duty = await bot.db.get_quota_record(week_id, member.id, "duty")
+    loa = await bot.db.active_loa(guild.id, member.id)
+    person = await bot.db.get_personnel(guild.id, member.id)
+    rank_name = person["rank_name"] if person else None
+    live_member = member if isinstance(member, discord.Member) else guild.get_member(member.id)
+    required = quota_required_minutes(live_member, cfg, rank_name)
+    if duty:
+        required = int(duty["required_minutes"] or required)
+    done = int(duty["completed_minutes"]) if duty else 0
+    if active_row is not None:
+        done += max(0, current_shift_seconds(active_row) // 60)
+    percent = 0.0 if required <= 0 else min(100.0, done * 100 / required)
+    embed = base_embed("Weekly quota", color=COLOR_GOLD)
+    if loa or (person and person["quota_exempt"]):
+        embed.description = "Exempt this week."
+        embed.add_field(name="Progress", value="n/a", inline=True)
+    else:
+        embed.description = f"`{quota_progress_bar(percent)}` **{percent:.0f}%**"
+        embed.add_field(name="Completed", value=f"{done} / {required} minutes", inline=False)
+    embed.set_footer(text="Quota resets every Monday.")
+    return embed
+
+
+async def build_shift_menu_message(
+    bot: WSPBot,
+    guild: discord.Guild,
+    user: discord.abc.User,
+) -> tuple[list[discord.Embed], ShiftActionView]:
+    totals = await bot.db.shift_totals(guild.id, user.id)
+    active = await bot.db.active_shift(guild.id, user.id)
+    status = active["status"] if active else None
+    cfg = await bot.guild_config(guild.id)
+    can_start = isinstance(user, discord.Member) and member_can_start_shift(user, cfg)
+    management = build_shift_management_embed(
+        user,
+        shift_count=int(totals["shift_count"] or 0) if totals else 0,
+        total_seconds=int(totals["total_seconds"] or 0) if totals else 0,
+        status=status,
+    )
+    quota = await build_quota_progress_embed(bot, guild, user, active_row=active)
+    view = ShiftActionView(status, owner_id=user.id, can_start=can_start)
+    return [management, quota], view
 
 
 async def build_duty_board(bot: WSPBot, guild: discord.Guild) -> discord.Embed:
@@ -433,28 +502,30 @@ async def _finish_shift_action(
         status = row["status"] if row else None
         title = _message_title(interaction)
         if title in {"Your shift", "Shift controls"} or title.startswith("Shift Management"):
-            if title == "Shift controls":
+            embeds: list[discord.Embed]
+            view: ShiftActionView
+            if title.startswith("Shift Management"):
+                embeds, view = await build_shift_menu_message(bot, guild, interaction.user)
+                panel = embeds[0]
+            elif title == "Shift controls":
                 panel = await build_shift_controls(status)
-            elif title.startswith("Shift Management"):
-                totals = await bot.db.shift_totals(guild.id, interaction.user.id)
-                panel = build_shift_management_embed(
-                    interaction.user,
-                    shift_count=int(totals["shift_count"] or 0) if totals else 0,
-                    total_seconds=int(totals["total_seconds"] or 0) if totals else 0,
-                    status=status,
-                )
+                embeds = [panel]
+                cfg = await bot.guild_config(guild.id)
+                can_start = isinstance(interaction.user, discord.Member) and member_can_start_shift(interaction.user, cfg)
+                view = ShiftActionView(status, owner_id=interaction.user.id, can_start=can_start)
             else:
                 panel = await build_personal_shift(bot, guild, interaction.user, row)
+                embeds = [panel]
+                cfg = await bot.guild_config(guild.id)
+                can_start = isinstance(interaction.user, discord.Member) and member_can_start_shift(interaction.user, cfg)
+                view = ShiftActionView(status, owner_id=interaction.user.id, can_start=can_start)
             if notice.title:
                 panel.add_field(name="Update", value=notice.title, inline=False)
-            cfg = await bot.guild_config(guild.id)
-            can_start = isinstance(interaction.user, discord.Member) and member_can_start_shift(interaction.user, cfg)
-            view = ShiftActionView(status, owner_id=interaction.user.id, can_start=can_start)
             try:
                 if interaction.message:
-                    await interaction.message.edit(embed=panel, view=view)
+                    await interaction.message.edit(embeds=embeds, view=view)
                 else:
-                    await interaction.edit_original_response(embed=panel, view=view)
+                    await interaction.edit_original_response(embeds=embeds, view=view)
             except discord.HTTPException:
                 await reply_interaction(interaction, notice)
                 return

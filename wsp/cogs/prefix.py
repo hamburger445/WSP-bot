@@ -21,7 +21,7 @@ from wsp.views.shifts import (
     begin_shift,
     build_duty_board,
     build_leaderboard,
-    build_shift_management_embed,
+    build_shift_menu_message,
     complete_shift,
 )
 
@@ -215,22 +215,8 @@ class Prefix(commands.Cog):
     async def shift_menu(self, ctx: commands.Context) -> None:
         if not isinstance(ctx.author, discord.Member) or ctx.guild is None:
             return
-        totals = await self.bot.db.shift_totals(ctx.guild.id, ctx.author.id)
-        active = await self.bot.db.active_shift(ctx.guild.id, ctx.author.id)
-        cfg = await self.bot.guild_config(ctx.guild.id)
-        await ctx.send(
-            embed=build_shift_management_embed(
-                ctx.author,
-                shift_count=int(totals["shift_count"] or 0) if totals else 0,
-                total_seconds=int(totals["total_seconds"] or 0) if totals else 0,
-                status=active["status"] if active else None,
-            ),
-            view=ShiftActionView(
-                active["status"] if active else None,
-                owner_id=ctx.author.id,
-                can_start=member_can_start_shift(ctx.author, cfg),
-            ),
-        )
+        embeds, view = await build_shift_menu_message(self.bot, ctx.guild, ctx.author)
+        await ctx.send(embeds=embeds, view=view)
 
     @shift_grp.command(name="data")
     async def shift_data(self, ctx: commands.Context) -> None:

@@ -12,15 +12,14 @@ from discord.ext import commands
 from wsp.constants import PermissionLevel
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.permissions import resolve_level
-from wsp.utils import current_shift_seconds, hms_to_seconds, member_can_start_shift, mention_or_id, sync_duty_role
+from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, sync_duty_role
 from wsp.views.shifts import (
-    ShiftActionView,
     ShiftMenuView,
     acknowledge,
     begin_shift,
     build_duty_board,
     build_leaderboard,
-    build_shift_management_embed,
+    build_shift_menu_message,
     complete_shift,
     pause_shift,
     reply_interaction,
@@ -338,22 +337,8 @@ class Shifts(commands.Cog):
             await reply_interaction(interaction, error_embed("Guild only"))
             return
         try:
-            totals = await self.bot.db.shift_totals(interaction.guild.id, interaction.user.id)
-            active = await self.bot.db.active_shift(interaction.guild.id, interaction.user.id)
-            cfg = await self.bot.guild_config(interaction.guild.id)
-            await interaction.edit_original_response(
-                embed=build_shift_management_embed(
-                    interaction.user,
-                    shift_count=int(totals["shift_count"] or 0) if totals else 0,
-                    total_seconds=int(totals["total_seconds"] or 0) if totals else 0,
-                    status=active["status"] if active else None,
-                ),
-                view=ShiftActionView(
-                    active["status"] if active else None,
-                    owner_id=interaction.user.id,
-                    can_start=member_can_start_shift(interaction.user, cfg),
-                ),
-            )
+            embeds, view = await build_shift_menu_message(self.bot, interaction.guild, interaction.user)
+            await interaction.edit_original_response(embeds=embeds, view=view)
         except discord.HTTPException as exc:
             if getattr(exc, "code", None) in {10062, 40060}:
                 log.warning("/shift menu interaction expired while loading the response")
