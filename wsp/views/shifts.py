@@ -11,7 +11,7 @@ import discord
 from wsp.constants import COLOR_NAVY, COLOR_SUCCESS
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
-from wsp.utils import current_shift_seconds, ensure_personnel, member_can_start_shift, mention_or_id, sync_duty_role
+from wsp.utils import current_shift_seconds, ensure_personnel, member_can_start_shift, mention_or_id, reply_interaction as send_slash_reply, sync_duty_role
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -343,13 +343,7 @@ async def acknowledge(interaction: discord.Interaction, *, ephemeral: bool = Fal
 
 
 async def reply_interaction(interaction: discord.Interaction, embed: discord.Embed, *, ephemeral: bool = True) -> None:
-    try:
-        if interaction.response.is_done():
-            await interaction.followup.send(embed=embed, ephemeral=ephemeral)
-        else:
-            await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
-    except discord.HTTPException:
-        pass
+    await send_slash_reply(interaction, embed=embed, ephemeral=ephemeral)
 
 
 async def _send_personal_controls(interaction: discord.Interaction) -> None:

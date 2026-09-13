@@ -12,7 +12,7 @@ from wsp.constants import COLOR_GOLD, COLOR_NAVY, PermissionLevel
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts_rel
 from wsp.ops import reset_shift_data
 from wsp.permissions import has_level, resolve_level
-from wsp.utils import mention_or_id
+from wsp.utils import mention_or_id, reply_interaction
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -26,10 +26,10 @@ class Dashboard(commands.Cog):
     @has_level(PermissionLevel.HR)
     async def dashboard(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
             return
         embed = await overview_embed(self.bot, interaction.guild)
-        await interaction.response.send_message(embed=embed, view=DashboardView(), ephemeral=True)
+        await reply_interaction(interaction, embed=embed, view=DashboardView(), ephemeral=True)
 
 
 async def overview_embed(bot: WSPBot, guild: discord.Guild) -> discord.Embed:

@@ -15,7 +15,7 @@ from wsp.cogs.quota import Quota
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.ops import change_rank, fire_member
 from wsp.permissions import is_owner, prefix_has_level, prefix_is_owner, resolve_user_level
-from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, quota_required_minutes, sync_duty_role
+from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, quota_required_minutes, reply_interaction, sync_duty_role
 from wsp.views.shifts import (
     ShiftMenuView,
     begin_shift,
@@ -152,9 +152,9 @@ class Prefix(commands.Cog):
     @is_owner()
     async def dmstop_slash(self, interaction: discord.Interaction, user: discord.User) -> None:
         if self._dm_routes.pop(user.id, None) is None:
-            await interaction.response.send_message(f"No active DM route exists for {user}.", ephemeral=True)
+            await reply_interaction(interaction, f"No active DM route exists for {user}.", ephemeral=True)
             return
-        await interaction.response.send_message(f"DM forwarding stopped for {user}.", ephemeral=True)
+        await reply_interaction(interaction, f"DM forwarding stopped for {user}.", ephemeral=True)
 
     @commands.command(name="promote")
     @prefix_has_level(PermissionLevel.HR)

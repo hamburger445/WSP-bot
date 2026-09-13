@@ -319,6 +319,33 @@ def mention_or_id(guild: discord.Guild | None, discord_id: str | int | None) -> 
     return f"<@{uid}>"
 
 
+async def reply_interaction(
+    interaction: discord.Interaction,
+    content: str | None = None,
+    *,
+    embed: discord.Embed | None = None,
+    view: discord.ui.View | None = None,
+    ephemeral: bool = True,
+) -> None:
+    """Reply to a slash command even if the tree already deferred it."""
+    payload: dict = {}
+    if content is not None:
+        payload["content"] = content
+    if embed is not None:
+        payload["embed"] = embed
+    if view is not None:
+        payload["view"] = view
+    if interaction.response.is_done():
+        try:
+            await interaction.edit_original_response(**payload)
+            return
+        except discord.HTTPException:
+            pass
+        await interaction.followup.send(ephemeral=ephemeral, **payload)
+        return
+    await interaction.response.send_message(ephemeral=ephemeral, **payload)
+
+
 def current_shift_seconds(row) -> int:
     from wsp.db import Database
 

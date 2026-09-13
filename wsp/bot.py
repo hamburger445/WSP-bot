@@ -25,6 +25,9 @@ PUBLIC_SLASH = frozenset({
     "shift leaderboard",
     "ping",
 })
+MODAL_SLASH = frozenset({
+    "dm",
+})
 
 
 class WSPCommandTree(app_commands.CommandTree):
@@ -38,6 +41,8 @@ class WSPCommandTree(app_commands.CommandTree):
         name = ""
         if interaction.command is not None:
             name = interaction.command.qualified_name
+        if name in MODAL_SLASH:
+            return True
         try:
             await interaction.response.defer(ephemeral=name not in PUBLIC_SLASH)
         except discord.NotFound:

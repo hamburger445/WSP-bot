@@ -11,6 +11,7 @@ from discord.ext import commands
 from wsp.constants import COLOR_NAVY, PermissionLevel
 from wsp.embeds import base_embed, error_embed, success_embed
 from wsp.permissions import has_level, resolve_level
+from wsp.utils import reply_interaction
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -67,7 +68,8 @@ class Help(commands.Cog):
     async def help(self, interaction: discord.Interaction) -> None:
         staff = await _is_staff(interaction)
         owner = await _is_owner(interaction)
-        await interaction.response.send_message(
+        await reply_interaction(
+            interaction,
             embed=_catalog_embed("members", staff, owner),
             view=HelpView(staff, owner),
             ephemeral=True,
@@ -77,7 +79,7 @@ class Help(commands.Cog):
     @app_commands.command(name="ping", description="Check latency.")
     async def ping(self, interaction: discord.Interaction) -> None:
         ms = round(self.bot.latency * 1000)
-        await interaction.response.send_message(f"Pong — **{ms} ms**")
+        await reply_interaction(interaction, f"Pong — **{ms} ms**", ephemeral=False)
 
     @app_commands.command(name="say", description="Send a message.")
     @has_level(PermissionLevel.HR)
@@ -90,15 +92,15 @@ class Help(commands.Cog):
     ) -> None:
         dest = channel or interaction.channel
         if not isinstance(dest, (discord.TextChannel, discord.Thread)):
-            await interaction.response.send_message(embed=error_embed("Unavailable"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Unavailable"), ephemeral=True)
             return
         text = message.replace("@everyone", "everyone").replace("@here", "here")[:2000]
         try:
             await dest.send(text)
         except discord.HTTPException:
-            await interaction.response.send_message(embed=error_embed("Could not send"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Could not send"), ephemeral=True)
             return
-        await interaction.response.send_message(embed=success_embed("Sent"), ephemeral=True)
+        await reply_interaction(interaction, embed=success_embed("Sent"), ephemeral=True)
 
 
 async def _is_staff(interaction: discord.Interaction) -> bool:

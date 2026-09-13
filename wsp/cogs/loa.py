@@ -15,7 +15,7 @@ from wsp.constants import COLOR_DANGER, COLOR_GOLD, PermissionLevel
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, success_embed, ts
 from wsp.permissions import has_level, resolve_level
-from wsp.utils import ensure_personnel, mention_or_id, parse_date
+from wsp.utils import ensure_personnel, mention_or_id, parse_date, reply_interaction
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -43,7 +43,7 @@ class LOA(commands.Cog):
         additional_information: str | None = None,
     ) -> None:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
             return
         ok, embed = await create_loa_request(
             self.bot,
@@ -54,7 +54,7 @@ class LOA(commands.Cog):
             reason,
             additional_information,
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await reply_interaction(interaction, embed=embed, ephemeral=True)
 
     @loa.command(name="active", description="List members on leave.")
     @has_level(PermissionLevel.HR)
@@ -69,22 +69,22 @@ class LOA(commands.Cog):
             f"{mention_or_id(interaction.guild, r['discord_id'])} • {ts(r['start_date'])} → {ts(r['end_date'])} — {r['reason']}"
             for r in current
         ) or "No members are currently on approved leave."
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await reply_interaction(interaction, embed=embed, ephemeral=True)
 
     @loa.command(name="menu", description="Open the leave menu.")
     async def loa_menu(self, interaction: discord.Interaction) -> None:
         embed = base_embed("Leave of Absence", "Submit a leave request or view your requests.")
-        await interaction.response.send_message(embed=embed, view=LOAMenuView(), ephemeral=True)
+        await reply_interaction(interaction, embed=embed, view=LOAMenuView(), ephemeral=True)
 
     @loa.command(name="admin", description="Manage a member's leave.")
     @has_level(PermissionLevel.HR)
     @app_commands.describe(member="Member")
     async def admin(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
             return
         embed = await build_loa_admin_embed(self.bot, interaction.guild, member)
-        await interaction.response.send_message(embed=embed, view=LOAAdminView(member), ephemeral=True)
+        await reply_interaction(interaction, embed=embed, view=LOAAdminView(member), ephemeral=True)
 
 
 async def create_loa_request(

@@ -11,7 +11,7 @@ from discord.ext import commands
 from wsp.constants import PermissionLevel
 from wsp.embeds import add_fields, base_embed, error_embed, success_embed
 from wsp.permissions import has_level, resolve_level
-from wsp.utils import member_from_id, mention_or_id, quota_required_minutes
+from wsp.utils import member_from_id, mention_or_id, quota_required_minutes, reply_interaction
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -48,7 +48,7 @@ class Quota(commands.Cog):
         target = member or interaction.user
         if member and member.id != interaction.user.id:
             if await resolve_level(interaction) < PermissionLevel.HR:
-                await interaction.response.send_message(embed=error_embed("Restricted"), ephemeral=True)
+                await reply_interaction(interaction, embed=error_embed("Restricted"), ephemeral=True)
                 return
         cfg = await self.bot.guild_config(interaction.guild.id)
         week = self.bot.db.week_start_ts(cfg.get("timezone") or "America/Chicago")
@@ -70,7 +70,7 @@ class Quota(commands.Cog):
             ],
         )
         embed.set_footer(text="Quota resets every Monday.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await reply_interaction(interaction, embed=embed, ephemeral=True)
 
     @quota.command(name="leaderboard", description="Show quota standings.")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
@@ -89,7 +89,7 @@ class Quota(commands.Cog):
                 f"{mention_or_id(interaction.guild, r['discord_id'])} — **{r['completed_minutes']}** / {r['required_minutes']} min (`{r['status'] or 'in progress'}`)"
                 for r in sorted(duty_rows, key=lambda r: int(r["completed_minutes"]), reverse=True)[:20]
             )
-        await interaction.response.send_message(embed=embed)
+        await reply_interaction(interaction, embed=embed, ephemeral=False)
 
     @quota.command(name="admin", description="Change quota settings.")
     @has_level(PermissionLevel.HR)
@@ -146,9 +146,9 @@ class Quota(commands.Cog):
                     ("Timezone", cfg.get("timezone"), True),
                 ],
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await reply_interaction(interaction, embed=embed, ephemeral=True)
             return
-        await interaction.response.send_message(embed=success_embed("Quota updated", "\n".join(changed)), ephemeral=True)
+        await reply_interaction(interaction, embed=success_embed("Quota updated", "\n".join(changed)), ephemeral=True)
 
 
 def _status(done: int, required: int) -> str:

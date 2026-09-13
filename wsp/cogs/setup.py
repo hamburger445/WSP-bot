@@ -12,6 +12,7 @@ from discord.ext import commands
 from wsp.constants import COLOR_NAVY
 from wsp.embeds import base_embed, error_embed, success_embed, warning_embed
 from wsp.permissions import is_owner
+from wsp.utils import reply_interaction
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -100,7 +101,7 @@ class Setup(commands.Cog):
     async def setupserver(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
         if guild is None:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
             return
         cfg = await self.bot.guild_config(guild.id)
         cfg.set_path(["guild_id"], str(guild.id))
@@ -113,7 +114,7 @@ class Setup(commands.Cog):
     async def verifysetup(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
         if guild is None:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
             return
         cfg = await self.bot.guild_config(guild.id)
         missing_cfg = cfg.missing_required()
@@ -143,29 +144,29 @@ class Setup(commands.Cog):
         missing_tables = [t for t in required_tables if t not in table_names]
         ok = not missing_cfg and not missing_discord and not missing_tables
         embed = success_embed("Setup", "Setup is complete.") if ok else warning_embed("Setup incomplete")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await reply_interaction(interaction, embed=embed, ephemeral=True)
 
     @app_commands.command(name="config", description="View or change settings.")
     @is_owner()
     @app_commands.describe(path="Setting name", value="New value")
     async def config(self, interaction: discord.Interaction, path: str | None = None, value: str | None = None) -> None:
         if interaction.guild is None:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
             return
         cfg = await self.bot.guild_config(interaction.guild.id)
         if not path:
-            await interaction.response.send_message(embed=base_embed("Settings", "Enter a setting name to view or change it."), ephemeral=True)
+            await reply_interaction(interaction, embed=base_embed("Settings", "Enter a setting name to view or change it."), ephemeral=True)
             return
         keys = [p for p in path.split(".") if p]
         if value is None:
             current = cfg.get(*keys, default=None)
             state = "Set" if current not in {None, ""} else "Unset"
-            await interaction.response.send_message(embed=base_embed("Setting", state), ephemeral=True)
+            await reply_interaction(interaction, embed=base_embed("Setting", state), ephemeral=True)
             return
         if keys[0] in {"roles", "channels", "categories", "rank_roles", "guild_id"}:
             parsed_id = parse_snowflake(value)
             if not parsed_id:
-                await interaction.response.send_message(embed=error_embed("Invalid ID"), ephemeral=True)
+                await reply_interaction(interaction, embed=error_embed("Invalid ID"), ephemeral=True)
                 return
             cfg.set_path(keys, str(parsed_id))
             display = str(parsed_id)
@@ -181,25 +182,24 @@ class Setup(commands.Cog):
             actor_name=str(interaction.user),
             details=f"{path} = {display}",
         )
-        await interaction.response.send_message(embed=success_embed("Setting saved"), ephemeral=True)
+        await reply_interaction(interaction, embed=success_embed("Setting saved"), ephemeral=True)
 
     @app_commands.command(name="sync", description="Sync commands.")
     @app_commands.checks.cooldown(1, 60.0)
     @is_owner()
     async def sync(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
         if interaction.guild:
             self.bot.tree.copy_global_to(guild=interaction.guild)
             synced = await self.bot.tree.sync(guild=interaction.guild)
         else:
             synced = await self.bot.tree.sync()
-        await interaction.followup.send(embed=success_embed("Commands synced", f"{len(synced)} commands published."), ephemeral=True)
+        await reply_interaction(interaction, embed=success_embed("Commands synced", f"{len(synced)} commands published."), ephemeral=True)
 
 
 async def _show_step(bot: WSPBot, interaction: discord.Interaction, step_index: int, *, edit: bool) -> None:
     guild = interaction.guild
     if guild is None:
-        await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+        await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
         return
     if step_index >= len(WIZARD_STEPS):
         await _finish_wizard(bot, interaction, edit=edit)
@@ -211,7 +211,7 @@ async def _show_step(bot: WSPBot, interaction: discord.Interaction, step_index: 
     if edit:
         await interaction.response.edit_message(embed=embed, view=view)
     else:
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await reply_interaction(interaction, embed=embed, view=view, ephemeral=True)
 
 
 async def _step_embed(guild: discord.Guild, cfg, step_index: int) -> discord.Embed:
@@ -241,7 +241,7 @@ async def _finish_wizard(bot: WSPBot, interaction: discord.Interaction, *, edit:
     if edit:
         await interaction.response.edit_message(embed=embed, view=view)
     else:
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await reply_interaction(interaction, embed=embed, ephemeral=True)
 
 
 class SetupWizardView(discord.ui.View):

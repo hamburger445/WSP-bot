@@ -12,6 +12,7 @@ from wsp.constants import PermissionLevel
 from wsp.embeds import error_embed, success_embed
 from wsp.ops import change_rank, fire_member
 from wsp.permissions import has_level
+from wsp.utils import reply_interaction
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -55,14 +56,13 @@ class Promotions(commands.Cog):
         reason: str | None = None,
     ) -> None:
         if not interaction.guild:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
             return
-        await interaction.response.defer(ephemeral=True)
         message = await fire_member(self.bot, interaction.guild, member, reason, interaction.user)
         if message in {"Restricted", "Could not update roles."}:
-            await interaction.followup.send(embed=error_embed(message), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed(message), ephemeral=True)
             return
-        await interaction.followup.send(embed=success_embed("Member fired", message), ephemeral=True)
+        await reply_interaction(interaction, embed=success_embed("Member fired", message), ephemeral=True)
 
     @promote.autocomplete("rank")
     @demote.autocomplete("rank")
@@ -79,19 +79,20 @@ class Promotions(commands.Cog):
         action: str,
     ) -> None:
         if interaction.guild is None:
-            await interaction.response.send_message(embed=error_embed("Guild only"), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
             return
         error = await change_rank(
             self.bot, interaction.guild, member, rank, reason, interaction.user, action
         )
         if error in {"Restricted", "Could not update roles."}:
-            await interaction.response.send_message(embed=error_embed(error), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed(error), ephemeral=True)
             return
         if error:
-            await interaction.response.send_message(embed=error_embed("Invalid rank change", error), ephemeral=True)
+            await reply_interaction(interaction, embed=error_embed("Invalid rank change", error), ephemeral=True)
             return
         title = "Promotion recorded" if action == "promotion" else "Demotion recorded"
-        await interaction.response.send_message(
+        await reply_interaction(
+            interaction,
             embed=success_embed(title, f"{member.mention} is now **{rank}**."),
             ephemeral=True,
         )
