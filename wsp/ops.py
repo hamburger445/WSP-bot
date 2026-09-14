@@ -18,6 +18,7 @@ from wsp.utils import (
     member_role_ids,
     resolve_guild_roles,
     sync_duty_role,
+    sync_fastpass_roles,
     sync_rank_roles,
 )
 
@@ -101,6 +102,78 @@ async def change_rank(
     await bot.try_dm(member, dm)
     await bot.notify(guild, "promotions", public)
     await bot.notify(guild, "notifications", public)
+    await bot.notify(guild, "command_log", public)
+    return None
+
+
+async def apply_fastpass(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.Member,
+    rank: str,
+    needs_supervision: bool,
+    needs_training: bool,
+    actor: discord.abc.User,
+) -> str | None:
+    new_rank = await bot.db.get_rank_by_name(guild.id, rank)
+    if new_rank is None:
+        return "Unknown rank."
+    record = await ensure_personnel(bot, member)
+    from_rank = record["rank_name"]
+    from_pos = max(int(record["rank_position"] or 0), await rank_position_for(bot, guild.id, member))
+    to_pos = int(new_rank["position"])
+    if not await can_manage_rank(bot, guild.id, actor, target_position=from_pos, new_position=to_pos):
+        return "Restricted"
+    rank = new_rank["name"]
+    live = await fetch_live_member(guild, member.id)
+    if live is not None:
+        member = live
+    cfg = await bot.guild_config(guild.id)
+    role_error = await sync_rank_roles(member, rank, cfg)
+    if role_error:
+        return role_error
+    await sync_fastpass_roles(
+        member,
+        cfg,
+        needs_supervision=needs_supervision,
+        needs_training=needs_training,
+    )
+    await bot.db.update_personnel(
+        record["id"],
+        rank_id=new_rank["id"],
+        status="active",
+        training_status="pending" if needs_training else "complete",
+        supervision_status="required" if needs_supervision else "none",
+    )
+    await bot.db.add_rank_history(
+        record["id"],
+        "fastpass",
+        from_rank,
+        rank,
+        f"supervision={needs_supervision} training={needs_training}",
+        str(actor.id),
+        str(actor.id),
+    )
+    await bot.db.audit(
+        guild.id,
+        "fastpass",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=member.id,
+        target_name=str(member),
+        details=f"{rank} | supervision={needs_supervision} | training={needs_training}",
+    )
+    public = success_embed("Fastpass", f"{member.mention} is now **{rank}**.")
+    add_fields(
+        public,
+        [
+            ("Needs supervision", "Yes" if needs_supervision else "No", True),
+            ("Needs training", "Yes" if needs_training else "No", True),
+            ("Processed by", actor.mention, True),
+        ],
+    )
+    await bot.notify(guild, "promotions", public)
+    await bot.notify(guild, "hr_log", public)
     await bot.notify(guild, "command_log", public)
     return None
 

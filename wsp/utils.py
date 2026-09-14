@@ -249,6 +249,44 @@ async def sync_rank_roles(member: discord.Member, new_rank: str, cfg) -> str | N
     return None
 
 
+async def sync_fastpass_roles(
+    member: discord.Member,
+    cfg,
+    *,
+    needs_supervision: bool,
+    needs_training: bool,
+) -> None:
+    guild = member.guild
+    live = await fetch_live_member(guild, member.id)
+    if live is not None:
+        member = live
+    wanted = [
+        cfg.role_id("shift_certified"),
+        cfg.role_id("needs_supervision"),
+        cfg.role_id("needs_training"),
+    ]
+    roles = await resolve_guild_roles(guild, [rid for rid in wanted if rid])
+    held = member_role_ids(member)
+    to_add: list[discord.Role] = []
+    to_remove: list[discord.Role] = []
+    certified = roles.get(cfg.role_id("shift_certified"))
+    if certified and certified.id not in held:
+        to_add.append(certified)
+    supervision = roles.get(cfg.role_id("needs_supervision"))
+    if supervision:
+        if needs_supervision and supervision.id not in held:
+            to_add.append(supervision)
+        elif not needs_supervision and supervision.id in held:
+            to_remove.append(supervision)
+    training = roles.get(cfg.role_id("needs_training"))
+    if training:
+        if needs_training and training.id not in held:
+            to_add.append(training)
+        elif not needs_training and training.id in held:
+            to_remove.append(training)
+    await apply_role_changes(member, add=to_add, remove=to_remove, reason="WSP fastpass")
+
+
 async def sync_duty_role(member: discord.Member, cfg, on_duty: bool) -> None:
     rid = cfg.role_id("on_duty")
     if not rid:

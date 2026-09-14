@@ -13,7 +13,7 @@ from wsp.cogs.dashboard import ConfirmShiftResetView, DashboardView, overview_em
 from wsp.cogs.help import HelpView, _catalog_embed
 from wsp.cogs.quota import Quota, build_quota_report
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel, warning_embed
-from wsp.ops import change_rank, fire_member
+from wsp.ops import apply_fastpass, change_rank, fire_member
 from wsp.permissions import is_owner, prefix_has_level, prefix_is_owner, resolve_user_level
 from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, quota_required_minutes, reply_interaction, sync_duty_role
 from wsp.views.shifts import (
@@ -188,6 +188,43 @@ class Prefix(commands.Cog):
             await ctx.send(embed=error_embed(message))
             return
         await ctx.send(embed=success_embed("Member fired", message))
+
+    @commands.command(name="fastpass")
+    @prefix_has_level(PermissionLevel.HR)
+    async def fastpass_cmd(self, ctx: commands.Context, member: discord.Member, *, rest: str) -> None:
+        rank, needs_supervision, needs_training = _parse_fastpass_args(rest)
+        if not rank or needs_supervision is None or needs_training is None:
+            await ctx.send(
+                embed=error_embed(
+                    "Command failed",
+                    "Use `-fastpass @user Rank true/false true/false`.\n"
+                    "1. Needs supervision  •  2. Needs training",
+                )
+            )
+            return
+        error = await apply_fastpass(
+            self.bot,
+            ctx.guild,  # type: ignore[arg-type]
+            member,
+            rank,
+            needs_supervision,
+            needs_training,
+            ctx.author,
+        )
+        if error in {"Restricted", "Could not update roles."}:
+            await ctx.send(embed=error_embed(error))
+            return
+        if error:
+            await ctx.send(embed=error_embed("Fastpass failed", error))
+            return
+        await ctx.send(
+            embed=success_embed(
+                "Fastpass",
+                f"{member.mention} is now **{rank}**.\n"
+                f"Needs supervision: **{'Yes' if needs_supervision else 'No'}**\n"
+                f"Needs training: **{'Yes' if needs_training else 'No'}**",
+            )
+        )
 
     async def _rank(
         self,
@@ -490,6 +527,27 @@ class Prefix(commands.Cog):
 def _format_dm_message(message: str) -> str:
     """Turn pasted literal newline escapes into Discord line breaks."""
     return message.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+
+
+async def _parse_fastpass_args(rest: str) -> tuple[str | None, bool | None, bool | None]:
+    parts = rest.split()
+    if len(parts) < 3:
+        return None, None, None
+    needs_training = _parse_flag(parts[-1])
+    needs_supervision = _parse_flag(parts[-2])
+    rank = " ".join(parts[:-2]).strip()
+    if not rank or needs_supervision is None or needs_training is None:
+        return None, None, None
+    return rank, needs_supervision, needs_training
+
+
+def _parse_flag(value: str) -> bool | None:
+    key = value.strip().lower()
+    if key in {"true", "t", "yes", "y", "1", "on"}:
+        return True
+    if key in {"false", "f", "no", "n", "0", "off"}:
+        return False
+    return None
 
 
 async def _split_rank_reason(bot: WSPBot, guild_id: int, rest: str) -> tuple[str | None, str]:
