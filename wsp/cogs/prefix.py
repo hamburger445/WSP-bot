@@ -13,7 +13,7 @@ from wsp.cogs.dashboard import ConfirmShiftResetView, DashboardView, overview_em
 from wsp.cogs.help import HelpView, _catalog_embed
 from wsp.cogs.quota import Quota, build_quota_report
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel, warning_embed
-from wsp.ops import apply_fastpass, change_rank, fire_member
+from wsp.ops import apply_fastpass, change_rank, complete_member_trial, fire_member, start_member_trial
 from wsp.permissions import is_owner, prefix_has_level, prefix_is_owner, resolve_user_level
 from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, quota_required_minutes, reply_interaction, sync_duty_role
 from wsp.views.shifts import (
@@ -225,6 +225,35 @@ class Prefix(commands.Cog):
                 f"Needs training: **{'Yes' if needs_training else 'No'}**",
             )
         )
+
+    @commands.group(name="trial", invoke_without_command=True)
+    @prefix_has_level(PermissionLevel.HR)
+    async def trial_grp(self, ctx: commands.Context) -> None:
+        await ctx.send(embed=base_embed("Trial", "Start a trial or end one early."))
+
+    @trial_grp.command(name="start")
+    @prefix_has_level(PermissionLevel.HR)
+    async def trial_start_cmd(self, ctx: commands.Context, member: discord.Member, days: int) -> None:
+        if ctx.guild is None:
+            return
+        error = await start_member_trial(self.bot, ctx.guild, member, days, ctx.author)
+        if error:
+            await ctx.send(embed=error_embed(error if error in {"Restricted", "Could not update roles.", "Already on trial."} else "Cannot start trial", error))
+            return
+        unit = "day" if days == 1 else "days"
+        await ctx.send(embed=success_embed("Trial started", f"{member.mention} is on a **{days}-{unit}** trial."))
+
+    @trial_grp.command(name="admin")
+    @prefix_has_level(PermissionLevel.HR)
+    async def trial_admin_cmd(self, ctx: commands.Context, member: discord.Member) -> None:
+        if ctx.guild is None:
+            return
+        row = await self.bot.db.active_trial(ctx.guild.id, member.id)
+        if row is None:
+            await ctx.send(embed=error_embed("Not on trial"))
+            return
+        await complete_member_trial(self.bot, ctx.guild, row, early=True, actor=ctx.author)
+        await ctx.send(embed=success_embed("Trial ended", f"{member.mention}'s trial was ended early."))
 
     async def _rank(
         self,

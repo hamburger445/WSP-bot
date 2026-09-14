@@ -330,40 +330,18 @@ class AcademyRecruitView(discord.ui.View):
             deadline,
             interaction.user.id,
         )
-
-        channel = interaction.channel
-
-        if not isinstance(channel, discord.TextChannel):
-            channel = await sticky_channel(
-                bot,
-                interaction.guild,
-            )
-
-        if channel is None:
-            await interaction.response.send_message(
-                "Not found",
-                ephemeral=True,
-            )
+        posted = await bot.notify(
+            interaction.guild,
+            "academy_log",
+            academy_log_embed(username, recruit.id, hire, deadline),
+        )
+        if posted is None:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Not found", ephemeral=True)
+            else:
+                await interaction.followup.send("Not found", ephemeral=True)
             return
-
-        # Send the recruit's academy log.
-        #
-        # This is a bot message, so Academy.on_message now
-        # ignores it and will NOT create another sticky.
-        posted = await channel.send(
-            embed=academy_log_embed(
-                username,
-                recruit.id,
-                hire,
-                deadline,
-            )
-        )
-
-        # Save the academy log's message ID.
-        await bot.db.set_academy_log_message(
-            log_id,
-            posted.id,
-        )
+        await bot.db.set_academy_log_message(log_id, posted.id)
 
         if not interaction.response.is_done():
             await interaction.response.send_message(

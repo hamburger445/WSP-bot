@@ -205,6 +205,11 @@ class GuildConfig:
         if wanted_academy and current_academy != wanted_academy:
             self.set_path(["channels", "academy"], wanted_academy)
             changed = True
+        wanted_academy_log = str((defaults.get("channels") or {}).get("academy_log") or "")
+        current_academy_log = str((self._data.get("channels") or {}).get("academy_log") or "")
+        if wanted_academy_log and current_academy_log != wanted_academy_log:
+            self.set_path(["channels", "academy_log"], wanted_academy_log)
+            changed = True
         wanted_trial = str((defaults.get("channels") or {}).get("trial") or "")
         current_trial = str((self._data.get("channels") or {}).get("trial") or "")
         if wanted_trial and current_trial != wanted_trial:

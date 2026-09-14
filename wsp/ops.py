@@ -438,30 +438,50 @@ async def start_member_trial(
     return None
 
 
-async def complete_member_trial(bot: WSPBot, guild: discord.Guild, row) -> None:
+async def complete_member_trial(
+    bot: WSPBot,
+    guild: discord.Guild,
+    row,
+    *,
+    early: bool = False,
+    actor: discord.abc.User | None = None,
+) -> None:
     cfg = await bot.guild_config(guild.id)
     member = await member_from_id(bot, guild, int(row["discord_id"]))
     if member:
         await sync_trial_role(member, cfg, False)
+        if early:
+            unit = "day" if int(row["days"]) == 1 else "days"
+            await bot.try_dm(
+                member,
+                base_embed(
+                    "Your trial has ended",
+                    f"Your **{int(row['days'])}-{unit}** Wisconsin State Patrol trial has ended.",
+                    color=COLOR_NAVY,
+                ),
+            )
     days = int(row["days"])
     unit = "day" if days == 1 else "days"
+    title = "Trial ended early" if early else "Trial ended"
     embed = base_embed(
-        "Trial ended",
+        title,
         f"{mention_or_id(guild, row['discord_id'])}'s **{days}-{unit}** trial has ended.",
         color=COLOR_NAVY,
     )
-    add_fields(
-        embed,
-        [
-            ("Started", ts(int(row["start_date"])), True),
-            ("Ended", ts(int(row["end_date"])), True),
-        ],
-    )
+    fields: list[tuple[str, object, bool]] = [
+        ("Started", ts(int(row["start_date"])), True),
+        ("Scheduled end", ts(int(row["end_date"])), True),
+    ]
+    if actor is not None:
+        fields.append(("Ended by", actor.mention, True))
+    add_fields(embed, fields)
     await bot.notify(guild, "trial", embed)
     await bot.db.end_trial(int(row["id"]))
     await bot.db.audit(
         guild.id,
-        "trial_end",
+        "trial_end_early" if early else "trial_end",
+        actor_id=actor.id if actor else None,
+        actor_name=str(actor) if actor else None,
         target_id=int(row["discord_id"]),
         details=f"#{row['id']} {days} days",
     )

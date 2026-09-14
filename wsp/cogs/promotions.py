@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from wsp.constants import PermissionLevel
 from wsp.embeds import error_embed, success_embed
-from wsp.ops import apply_fastpass, change_rank, fire_member, start_member_trial
+from wsp.ops import apply_fastpass, change_rank, complete_member_trial, fire_member, start_member_trial
 from wsp.permissions import has_level
 from wsp.utils import reply_interaction
 
@@ -109,10 +109,12 @@ class Promotions(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="trial", description="Place a member on a trial of up to 30 days.")
+    trial = app_commands.Group(name="trial", description="Place or end a member trial.")
+
+    @trial.command(name="start", description="Place a member on a trial of up to 30 days.")
     @has_level(PermissionLevel.HR)
     @app_commands.describe(member="Member", days="Length of the trial in days, max 30")
-    async def trial(
+    async def trial_start(
         self,
         interaction: discord.Interaction,
         member: discord.Member,
@@ -132,6 +134,30 @@ class Promotions(commands.Cog):
         await reply_interaction(
             interaction,
             embed=success_embed("Trial started", f"{member.mention} is on a **{days}-{unit}** trial."),
+            ephemeral=True,
+        )
+
+    @trial.command(name="admin", description="End a member's trial early.")
+    @has_level(PermissionLevel.HR)
+    @app_commands.describe(member="Member on trial")
+    async def trial_admin(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if interaction.guild is None:
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
+            return
+        row = await self.bot.db.active_trial(interaction.guild.id, member.id)
+        if row is None:
+            await reply_interaction(interaction, embed=error_embed("Not on trial"), ephemeral=True)
+            return
+        await complete_member_trial(
+            self.bot,
+            interaction.guild,
+            row,
+            early=True,
+            actor=interaction.user,
+        )
+        await reply_interaction(
+            interaction,
+            embed=success_embed("Trial ended", f"{member.mention}'s trial was ended early."),
             ephemeral=True,
         )
 
