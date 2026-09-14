@@ -8,7 +8,7 @@ import discord
 
 from wsp.constants import COLOR_DANGER, COLOR_GOLD, COLOR_NAVY
 from wsp.db import now_ts
-from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed
+from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts
 from wsp.permissions import can_manage_rank, rank_position_for
 from wsp.utils import (
     apply_role_changes,
@@ -16,10 +16,12 @@ from wsp.utils import (
     fetch_live_member,
     member_from_id,
     member_role_ids,
+    mention_or_id,
     resolve_guild_roles,
     sync_duty_role,
     sync_fastpass_roles,
     sync_rank_roles,
+    sync_trial_role,
 )
 
 if TYPE_CHECKING:
@@ -373,4 +375,76 @@ async def end_active_shift(bot: WSPBot, guild: discord.Guild, discord_id: int) -
             "Shift ended",
             f"<@{discord_id}> shift `#{row['id']}` closed after **{format_duration(duration)}** (termination).",
         ),
+    )
+
+
+async def start_member_trial(
+    bot: WSPBot,
+    guild: discord.Guild,
+    member: discord.Member,
+    days: int,
+    actor: discord.abc.User,
+) -> str | None:
+    if days < 1 or days > 30:
+        return "Trial length must be 1 to 30 days."
+    existing = await bot.db.active_trial(guild.id, member.id)
+    if existing:
+        return "Already on trial."
+    await ensure_personnel(bot, member)
+    start = now_ts()
+    end = start + days * 86400
+    trial_id = await bot.db.create_trial(guild.id, member.id, days, start, end, actor.id)
+    cfg = await bot.guild_config(guild.id)
+    live = await fetch_live_member(guild, member.id)
+    if live is not None:
+        member = live
+    await sync_trial_role(member, cfg, True)
+    unit = "day" if days == 1 else "days"
+    dm = base_embed(
+        "You have been placed on trial",
+        f"You have been placed on a **{days}-{unit}** trial with Wisconsin State Patrol.\n\n"
+        "This trial will be used to determine if you are fit for WSP. "
+        "If you are not, you may be terminated promptly or put back to the academy.",
+        color=COLOR_GOLD,
+    )
+    dm.add_field(name="Ends", value=ts(end), inline=False)
+    await bot.try_dm(member, dm)
+    await bot.db.audit(
+        guild.id,
+        "trial_start",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=member.id,
+        target_name=str(member),
+        details=f"#{trial_id} {days} days",
+    )
+    return None
+
+
+async def complete_member_trial(bot: WSPBot, guild: discord.Guild, row) -> None:
+    cfg = await bot.guild_config(guild.id)
+    member = await member_from_id(bot, guild, int(row["discord_id"]))
+    if member:
+        await sync_trial_role(member, cfg, False)
+    days = int(row["days"])
+    unit = "day" if days == 1 else "days"
+    embed = base_embed(
+        "Trial ended",
+        f"{mention_or_id(guild, row['discord_id'])}'s **{days}-{unit}** trial has ended.",
+        color=COLOR_NAVY,
+    )
+    add_fields(
+        embed,
+        [
+            ("Started", ts(int(row["start_date"])), True),
+            ("Ended", ts(int(row["end_date"])), True),
+        ],
+    )
+    await bot.notify(guild, "trial", embed)
+    await bot.db.end_trial(int(row["id"]))
+    await bot.db.audit(
+        guild.id,
+        "trial_end",
+        target_id=int(row["discord_id"]),
+        details=f"#{row['id']} {days} days",
     )

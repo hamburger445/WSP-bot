@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from wsp.constants import PermissionLevel
 from wsp.embeds import error_embed, success_embed
-from wsp.ops import apply_fastpass, change_rank, fire_member
+from wsp.ops import apply_fastpass, change_rank, fire_member, start_member_trial
 from wsp.permissions import has_level
 from wsp.utils import reply_interaction
 
@@ -106,6 +106,32 @@ class Promotions(commands.Cog):
                 f"Needs supervision: **{'Yes' if needs_supervision else 'No'}**\n"
                 f"Needs training: **{'Yes' if needs_training else 'No'}**",
             ),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="trial", description="Place a member on a trial of up to 30 days.")
+    @has_level(PermissionLevel.HR)
+    @app_commands.describe(member="Member", days="Length of the trial in days, max 30")
+    async def trial(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        days: app_commands.Range[int, 1, 30],
+    ) -> None:
+        if interaction.guild is None:
+            await reply_interaction(interaction, embed=error_embed("Guild only"), ephemeral=True)
+            return
+        error = await start_member_trial(self.bot, interaction.guild, member, int(days), interaction.user)
+        if error in {"Restricted", "Could not update roles."}:
+            await reply_interaction(interaction, embed=error_embed(error), ephemeral=True)
+            return
+        if error:
+            await reply_interaction(interaction, embed=error_embed("Cannot start trial", error), ephemeral=True)
+            return
+        unit = "day" if days == 1 else "days"
+        await reply_interaction(
+            interaction,
+            embed=success_embed("Trial started", f"{member.mention} is on a **{days}-{unit}** trial."),
             ephemeral=True,
         )
 

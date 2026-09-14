@@ -41,6 +41,7 @@ STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/promote` — promote a member",
         "`/demote` — demote a member",
         "`/fire` — fire a member",
+        "`/trial` — place a member on a trial of up to 30 days",
         "`-fastpass @user Rank true/false true/false` — assign rank, band, and training roles",
         "`/shift admin` — start, pause, or end a shift",
         "`/shift reset` — reset all shift data",

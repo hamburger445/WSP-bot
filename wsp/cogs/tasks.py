@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 
 from wsp.db import now_ts
 from wsp.embeds import base_embed, warning_embed
+from wsp.ops import complete_member_trial
 from wsp.utils import mention_or_id
 
 if TYPE_CHECKING:
@@ -22,10 +23,12 @@ class ScheduledTasks(commands.Cog):
         self.bot = bot
         self.hourly.start()
         self.backup_job.start()
+        self.trial_job.start()
 
     def cog_unload(self) -> None:
         self.hourly.cancel()
         self.backup_job.cancel()
+        self.trial_job.cancel()
 
     @tasks.loop(hours=1)
     async def hourly(self) -> None:
@@ -49,6 +52,26 @@ class ScheduledTasks(commands.Cog):
 
     @backup_job.before_loop
     async def before_backup(self) -> None:
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=10)
+    async def trial_job(self) -> None:
+        try:
+            rows = await self.bot.db.list_due_trials()
+        except Exception:
+            log.exception("Could not load due trials")
+            return
+        for row in rows:
+            guild = self.bot.get_guild(int(row["guild_id"]))
+            if guild is None:
+                continue
+            try:
+                await complete_member_trial(self.bot, guild, row)
+            except Exception:
+                log.exception("Could not end trial %s", row["id"])
+
+    @trial_job.before_loop
+    async def before_trials(self) -> None:
         await self.bot.wait_until_ready()
 
     async def _quota_notices(self, guild_id: int) -> None:

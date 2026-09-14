@@ -402,6 +402,7 @@ _LOG_CHANNEL_NAMES: dict[str, tuple[str, ...]] = {
     "quota": ("quota", "quota-log", "quota-logs"),
     "audit_log": ("audit-log", "audit-logs"),
     "loa": ("loa", "leave-of-absence", "loa-requests"),
+    "trial": ("trial", "trial-log", "trial-logs"),
 }
 _GENERIC_LOG_NAMES = ("logs", "wsp-logs", "department-logs")
 

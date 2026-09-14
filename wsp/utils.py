@@ -305,6 +305,24 @@ async def sync_duty_role(member: discord.Member, cfg, on_duty: bool) -> None:
         await apply_role_changes(member, add=[], remove=[role], reason="WSP off duty")
 
 
+async def sync_trial_role(member: discord.Member, cfg, on_trial: bool) -> None:
+    rid = cfg.role_id("trial")
+    if not rid:
+        return
+    live = await fetch_live_member(member.guild, member.id)
+    if live is not None:
+        member = live
+    roles = await resolve_guild_roles(member.guild, [rid])
+    role = roles.get(rid)
+    if not role:
+        return
+    has = rid in member_role_ids(member)
+    if on_trial and not has:
+        await apply_role_changes(member, add=[role], remove=[], reason="WSP trial")
+    elif not on_trial and has:
+        await apply_role_changes(member, add=[], remove=[role], reason="WSP trial ended")
+
+
 async def member_from_id(bot: WSPBot, guild: discord.Guild | None, user_id: int) -> discord.Member | None:
     if guild is None:
         return None

@@ -278,6 +278,18 @@ CREATE TABLE IF NOT EXISTS academy_logs (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS trials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    discord_id TEXT NOT NULL,
+    days INTEGER NOT NULL,
+    start_date INTEGER NOT NULL,
+    end_date INTEGER NOT NULL,
+    started_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS activity_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id TEXT NOT NULL,
@@ -1353,4 +1365,44 @@ class Database:
         await self.execute(
             "UPDATE academy_logs SET message_id = ? WHERE id = ?",
             (str(message_id), log_id),
+        )
+
+    async def create_trial(
+        self,
+        guild_id: int,
+        discord_id: int,
+        days: int,
+        start_date: int,
+        end_date: int,
+        started_by: int,
+    ) -> int:
+        cur = await self.execute(
+            """
+            INSERT INTO trials (guild_id, discord_id, days, start_date, end_date, started_by, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+            """,
+            (str(guild_id), str(discord_id), days, start_date, end_date, str(started_by), now_ts()),
+        )
+        return int(cur.lastrowid or 0)
+
+    async def active_trial(self, guild_id: int, discord_id: int) -> aiosqlite.Row | None:
+        return await self.fetchone(
+            """
+            SELECT * FROM trials
+            WHERE guild_id = ? AND discord_id = ? AND status = 'active'
+            ORDER BY end_date DESC
+            """,
+            (str(guild_id), str(discord_id)),
+        )
+
+    async def list_due_trials(self) -> list[aiosqlite.Row]:
+        return await self.fetchall(
+            "SELECT * FROM trials WHERE status = 'active' AND end_date <= ? ORDER BY end_date",
+            (now_ts(),),
+        )
+
+    async def end_trial(self, trial_id: int) -> None:
+        await self.execute(
+            "UPDATE trials SET status = 'ended' WHERE id = ?",
+            (trial_id,),
         )
