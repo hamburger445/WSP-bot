@@ -558,7 +558,7 @@ def _format_dm_message(message: str) -> str:
     return message.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
 
 
-async def _parse_fastpass_args(rest: str) -> tuple[str | None, bool | None, bool | None]:
+def _parse_fastpass_args(rest: str) -> tuple[str | None, bool | None, bool | None]:
     parts = rest.split()
     if len(parts) < 3:
         return None, None, None
