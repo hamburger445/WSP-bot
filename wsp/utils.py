@@ -262,6 +262,7 @@ async def sync_fastpass_roles(
         member = live
     wanted = [
         cfg.role_id("shift_certified"),
+        cfg.role_id("shift_pending"),
         cfg.role_id("needs_supervision"),
         cfg.role_id("needs_training"),
     ]
@@ -270,8 +271,18 @@ async def sync_fastpass_roles(
     to_add: list[discord.Role] = []
     to_remove: list[discord.Role] = []
     certified = roles.get(cfg.role_id("shift_certified"))
-    if certified and certified.id not in held:
-        to_add.append(certified)
+    pending = roles.get(cfg.role_id("shift_pending"))
+    restricted = needs_supervision or needs_training
+    if restricted:
+        if pending and pending.id not in held:
+            to_add.append(pending)
+        if certified and certified.id in held:
+            to_remove.append(certified)
+    else:
+        if certified and certified.id not in held:
+            to_add.append(certified)
+        if pending and pending.id in held:
+            to_remove.append(pending)
     supervision = roles.get(cfg.role_id("needs_supervision"))
     if supervision:
         if needs_supervision and supervision.id not in held:

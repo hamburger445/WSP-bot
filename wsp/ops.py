@@ -165,19 +165,36 @@ async def apply_fastpass(
         target_name=str(member),
         details=f"{rank} | supervision={needs_supervision} | training={needs_training}",
     )
-    public = success_embed("Fastpass", f"{member.mention} is now **{rank}**.")
-    add_fields(
-        public,
-        [
-            ("Needs supervision", "Yes" if needs_supervision else "No", True),
-            ("Needs training", "Yes" if needs_training else "No", True),
-            ("Processed by", actor.mention, True),
-        ],
-    )
-    await bot.notify(guild, "promotions", public)
-    await bot.notify(guild, "hr_log", public)
-    await bot.notify(guild, "command_log", public)
+    await _send_fastpass_announcement(guild, cfg, member, rank, needs_supervision)
     return None
+
+
+async def _send_fastpass_announcement(
+    guild: discord.Guild,
+    cfg,
+    member: discord.Member,
+    rank: str,
+    needs_supervision: bool,
+) -> None:
+    channel_id = cfg.channel_id("fastpass") or 1240887220043255903
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(channel_id)
+        except discord.HTTPException:
+            return
+    if not isinstance(channel, discord.abc.Messageable):
+        return
+    extra = " under supervision" if needs_supervision else ""
+    content = (
+        f"**<:WSP:1278686256137506897> | Wisconsin State Patrol Fast-pass**\n\n"
+        f">  {member.mention} has fastpassed to {rank}{extra}.\n\n"
+        "*Signed,\nWSP Bot, Under HR.*"
+    )
+    try:
+        await channel.send(content)
+    except discord.HTTPException:
+        return
 
 
 async def fire_member(

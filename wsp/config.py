@@ -189,7 +189,7 @@ class GuildConfig:
         if current_fire != wanted_fire:
             self._data["fire_roles"] = list(defaults.get("fire_roles") or [])
             changed = True
-        for key in ("on_duty", "high_rank", "middle_rank", "low_rank", "shift_certified", "needs_supervision", "needs_training", "trial"):
+        for key in ("on_duty", "high_rank", "middle_rank", "low_rank", "shift_certified", "shift_pending", "needs_supervision", "needs_training", "trial"):
             wanted = str((defaults.get("roles") or {}).get(key) or "")
             current = str((self._data.get("roles") or {}).get(key) or "")
             if current != wanted:
@@ -209,6 +209,11 @@ class GuildConfig:
         current_trial = str((self._data.get("channels") or {}).get("trial") or "")
         if wanted_trial and current_trial != wanted_trial:
             self.set_path(["channels", "trial"], wanted_trial)
+            changed = True
+        wanted_fastpass = str((defaults.get("channels") or {}).get("fastpass") or "")
+        current_fastpass = str((self._data.get("channels") or {}).get("fastpass") or "")
+        if wanted_fastpass and current_fastpass != wanted_fastpass:
+            self.set_path(["channels", "fastpass"], wanted_fastpass)
             changed = True
         quota_defaults = defaults.get("quota") or {}
         quota = self._data.setdefault("quota", {})
