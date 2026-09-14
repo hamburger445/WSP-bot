@@ -32,6 +32,7 @@
     "Lieutenant": "1216298610506076190",
     "Captain": "1216298572278923315",
     "Major": "1216298539722739793",
+    "Lieutenant Colonel": "",
     "Colonel": "1216298426170605579",
     "Superintendent": "1216298389088768040"
   },
@@ -95,10 +96,11 @@
     {"name": "Senior Trooper", "position": 3, "permission_level": 1},
     {"name": "Master Trooper", "position": 4, "permission_level": 1},
     {"name": "Sergeant", "position": 5, "permission_level": 2},
-    {"name": "Lieutenant", "position": 6, "permission_level": 3},
-    {"name": "Captain", "position": 7, "permission_level": 4},
-    {"name": "Major", "position": 8, "permission_level": 4},
-    {"name": "Colonel", "position": 9, "permission_level": 4},
-    {"name": "Superintendent", "position": 10, "permission_level": 5}
+    {"name": "Lieutenant", "position": 6, "permission_level": 2},
+    {"name": "Captain", "position": 7, "permission_level": 2},
+    {"name": "Major", "position": 8, "permission_level": 3},
+    {"name": "Lieutenant Colonel", "position": 9, "permission_level": 3},
+    {"name": "Colonel", "position": 10, "permission_level": 3},
+    {"name": "Superintendent", "position": 11, "permission_level": 5}
   ]
 }

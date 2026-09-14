@@ -93,7 +93,7 @@ async def rank_position_for(bot: WSPBot, guild_id: int, user: discord.abc.User) 
     if cfg.role_id("middle_rank") in roles or cfg.role_id("supervisor") in roles:
         best = max(best, _POSITION_BY_NAME["Sergeant"])
     if cfg.role_id("high_rank") in roles or cfg.role_id("hr") in roles:
-        best = max(best, _POSITION_BY_NAME["Lieutenant"])
+        best = max(best, _POSITION_BY_NAME["Major"])
     if cfg.role_id("command") in roles:
         best = max(best, _POSITION_BY_NAME["Captain"])
     if cfg.role_id("superintendent") in roles:

@@ -23,15 +23,16 @@ DEFAULT_RANKS = [
     ("Senior Trooper", 3, 1),
     ("Master Trooper", 4, 1),
     ("Sergeant", 5, 2),
-    ("Lieutenant", 6, 3),
-    ("Captain", 7, 4),
-    ("Major", 8, 4),
-    ("Colonel", 9, 4),
-    ("Superintendent", 10, 5),
+    ("Lieutenant", 6, 2),
+    ("Captain", 7, 2),
+    ("Major", 8, 3),
+    ("Lieutenant Colonel", 9, 3),
+    ("Colonel", 10, 3),
+    ("Superintendent", 11, 5),
 ]
 
-HIGH_RANKS = frozenset({"Lieutenant", "Captain", "Major", "Colonel", "Superintendent"})
-MIDDLE_RANKS = frozenset({"Sergeant"})
+HIGH_RANKS = frozenset({"Major", "Lieutenant Colonel", "Colonel", "Superintendent"})
+MIDDLE_RANKS = frozenset({"Sergeant", "Lieutenant", "Captain"})
 LOW_RANKS = frozenset({"Master Trooper", "Senior Trooper", "Trooper", "Probationary Trooper"})
 BAND_ROLE_KEYS = {"high": "high_rank", "middle": "middle_rank", "low": "low_rank"}
 
