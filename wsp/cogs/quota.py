@@ -27,7 +27,7 @@ async def apply_shift_quota(bot: WSPBot, guild_id: int, discord_id: int, duratio
     person = await bot.db.get_personnel(guild_id, discord_id)
     rank_name = person["rank_name"] if person else None
     required = quota_required_minutes(member, cfg, rank_name)
-    minutes = max(0, duration_seconds // 60)
+    minutes = duration_seconds // 60
     loa = await bot.db.active_loa(guild_id, discord_id)
     status = "exempt_loa" if loa else None
     await bot.db.upsert_quota_record(week_id, discord_id, "duty", required, add_completed=minutes, status=status)

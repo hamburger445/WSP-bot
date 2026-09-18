@@ -337,11 +337,9 @@ async def decide_loa_record(
     if row["status"] != "pending":
         return "Already decided."
     await bot.db.update_loa(loa_id, status=status, reviewer_id=str(actor.id), review_note=note)
-    personnel = await bot.db.get_personnel(guild.id, int(row["discord_id"]))
-    if personnel and status == "approved":
-        await bot.db.update_personnel(personnel["id"], status="loa")
-    if personnel and status == "denied" and personnel["status"] == "loa":
-        await bot.db.update_personnel(personnel["id"], status="active")
+    from wsp.cogs.loa import _sync_personnel_leave
+
+    await _sync_personnel_leave(bot, guild, int(row["discord_id"]))
     await bot.db.audit(
         guild.id,
         f"loa_{status}",

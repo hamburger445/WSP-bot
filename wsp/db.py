@@ -993,7 +993,7 @@ class Database:
     ) -> None:
         existing = await self.get_quota_record(week_id, discord_id, quota_type)
         if existing:
-            new_completed = int(existing["completed_minutes"]) + add_completed
+            new_completed = max(0, int(existing["completed_minutes"]) + add_completed)
             new_supervision = int(existing["supervision_minutes"]) + add_supervision
             await self.execute(
                 """
@@ -1009,7 +1009,7 @@ class Database:
                 INSERT INTO quota_records (week_id, discord_id, required_minutes, completed_minutes, supervision_minutes, quota_type, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (week_id, str(discord_id), required_minutes, add_completed, add_supervision, quota_type, status),
+                (week_id, str(discord_id), required_minutes, max(0, add_completed), add_supervision, quota_type, status),
             )
 
     async def list_quota_records(self, week_id: int) -> list[aiosqlite.Row]:

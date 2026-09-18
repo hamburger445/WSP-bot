@@ -189,7 +189,7 @@ class GuildConfig:
         if current_fire != wanted_fire:
             self._data["fire_roles"] = list(defaults.get("fire_roles") or [])
             changed = True
-        for key in ("on_duty", "high_rank", "middle_rank", "low_rank", "shift_certified", "shift_pending", "needs_supervision", "needs_training", "trial"):
+        for key in ("on_duty", "high_rank", "middle_rank", "low_rank", "shift_certified", "shift_pending", "needs_supervision", "needs_training", "trial", "loa"):
             wanted = str((defaults.get("roles") or {}).get(key) or "")
             current = str((self._data.get("roles") or {}).get(key) or "")
             if current != wanted:

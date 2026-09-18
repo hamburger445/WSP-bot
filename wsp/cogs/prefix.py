@@ -12,10 +12,21 @@ from wsp.constants import PermissionLevel
 from wsp.cogs.dashboard import ConfirmShiftResetView, DashboardView, overview_embed
 from wsp.cogs.help import HelpView, _catalog_embed
 from wsp.cogs.quota import Quota, build_quota_report
+from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel, warning_embed
 from wsp.ops import apply_fastpass, change_rank, complete_member_trial, fire_member, start_member_trial
 from wsp.permissions import is_owner, prefix_has_level, prefix_is_owner, resolve_user_level
-from wsp.utils import current_shift_seconds, hms_to_seconds, mention_or_id, quota_required_minutes, reply_interaction, sync_duty_role
+from wsp.utils import (
+    current_shift_seconds,
+    ensure_personnel,
+    hms_to_seconds,
+    member_from_id,
+    mention_or_id,
+    parse_compact_duration,
+    quota_required_minutes,
+    reply_interaction,
+    sync_duty_role,
+)
 from wsp.views.shifts import (
     ShiftMenuView,
     begin_shift,
@@ -254,6 +265,52 @@ class Prefix(commands.Cog):
             return
         await complete_member_trial(self.bot, ctx.guild, row, early=True, actor=ctx.author)
         await ctx.send(embed=success_embed("Trial ended", f"{member.mention}'s trial was ended early."))
+
+    @commands.command(name="add")
+    @prefix_has_level(PermissionLevel.HR)
+    async def add_time_cmd(self, ctx: commands.Context, target: str, mode: str, *, duration: str) -> None:
+        if ctx.guild is None:
+            return
+        user_id = _parse_discord_id(target)
+        seconds = parse_compact_duration(duration)
+        action = mode.strip().lower()
+        if user_id is None or seconds is None or action not in {"new", "recent"}:
+            await ctx.send(
+                embed=error_embed(
+                    "Command failed",
+                    "Use `-add ID new 3m` or `-add ID recent 1h`.",
+                )
+            )
+            return
+        if action == "new":
+            message = await _create_logged_shift(self.bot, ctx.guild, user_id, seconds, ctx.author)
+        else:
+            message = await _adjust_recent_shift(self.bot, ctx.guild, user_id, seconds, ctx.author)
+        if message.startswith("Not found") or message.startswith("Cannot"):
+            await ctx.send(embed=error_embed(message))
+            return
+        await ctx.send(embed=success_embed("Shift updated", message))
+
+    @commands.command(name="remove")
+    @prefix_has_level(PermissionLevel.HR)
+    async def remove_time_cmd(self, ctx: commands.Context, target: str, mode: str, *, duration: str) -> None:
+        if ctx.guild is None:
+            return
+        user_id = _parse_discord_id(target)
+        seconds = parse_compact_duration(duration)
+        if user_id is None or seconds is None or mode.strip().lower() != "recent":
+            await ctx.send(
+                embed=error_embed(
+                    "Command failed",
+                    "Use `-remove ID recent 3m`.",
+                )
+            )
+            return
+        message = await _adjust_recent_shift(self.bot, ctx.guild, user_id, -seconds, ctx.author)
+        if message.startswith("Not found") or message.startswith("Cannot"):
+            await ctx.send(embed=error_embed(message))
+            return
+        await ctx.send(embed=success_embed("Shift updated", message))
 
     async def _rank(
         self,
@@ -556,6 +613,112 @@ class Prefix(commands.Cog):
 def _format_dm_message(message: str) -> str:
     """Turn pasted literal newline escapes into Discord line breaks."""
     return message.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+
+
+def _parse_discord_id(raw: str) -> int | None:
+    text = (raw or "").strip().removeprefix("<@").removeprefix("!").removesuffix(">")
+    return int(text) if text.isdigit() else None
+
+
+async def _create_logged_shift(bot: WSPBot, guild: discord.Guild, user_id: int, seconds: int, actor: discord.abc.User) -> str:
+    from wsp.cogs.quota import apply_shift_quota
+
+    member = await member_from_id(bot, guild, user_id)
+    rank_name = None
+    if member:
+        record = await ensure_personnel(bot, member)
+        rank_name = record["rank_name"] if record else None
+    else:
+        record = await bot.db.get_personnel(guild.id, user_id)
+        rank_name = record["rank_name"] if record else None
+    now = now_ts()
+    shift_id = await bot.db.start_shift(guild.id, user_id, rank_name, None)
+    await bot.db.update_shift(
+        shift_id,
+        status="completed",
+        start_time=now - seconds,
+        end_time=now,
+        duration_seconds=seconds,
+        pause_started=None,
+        paused_seconds=0,
+    )
+    await apply_shift_quota(bot, guild.id, user_id, seconds)
+    target = mention_or_id(guild, user_id)
+    await bot.db.audit(
+        guild.id,
+        "shift_add_new",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=user_id,
+        details=f"#{shift_id} {seconds}s",
+    )
+    await bot.notify(
+        guild,
+        "shift_log",
+        base_embed("Shift logged", f"{actor.mention} logged a **{format_duration(seconds)}** shift for {target} (`#{shift_id}`)."),
+    )
+    return f"Logged a **{format_duration(seconds)}** shift for {target} (`#{shift_id}`)."
+
+
+async def _adjust_recent_shift(
+    bot: WSPBot,
+    guild: discord.Guild,
+    user_id: int,
+    delta: int,
+    actor: discord.abc.User,
+) -> str:
+    from wsp.cogs.quota import apply_shift_quota
+
+    rows = await bot.db.list_shifts(guild.id, user_id, limit=1)
+    if not rows:
+        return "Not found"
+    row = rows[0]
+    old = bot.db.effective_shift_seconds(row)
+    new = max(0, old + delta)
+    applied = new - old
+    if applied == 0 and delta < 0:
+        return "Cannot remove time"
+    open_shift = row["status"] in {"active", "paused"}
+    if open_shift:
+        start = int(row["start_time"]) - applied
+        latest = now_ts()
+        if start > latest:
+            start = latest
+        await bot.db.update_shift(int(row["id"]), start_time=start)
+    else:
+        start = int(row["start_time"])
+        await bot.db.update_shift(
+            int(row["id"]),
+            status="completed",
+            end_time=start + new,
+            duration_seconds=new,
+            pause_started=None,
+        )
+        if applied:
+            await apply_shift_quota(bot, guild.id, user_id, applied)
+    target = mention_or_id(guild, user_id)
+    verb = "added" if applied > 0 else "removed"
+    await bot.db.audit(
+        guild.id,
+        "shift_add_recent" if applied > 0 else "shift_remove_recent",
+        actor_id=actor.id,
+        actor_name=str(actor),
+        target_id=user_id,
+        details=f"#{row['id']} {applied}s",
+    )
+    await bot.notify(
+        guild,
+        "shift_log",
+        base_embed(
+            "Shift updated",
+            f"{actor.mention} {verb} **{format_duration(abs(applied))}** on {target} shift `#{row['id']}` "
+            f"({format_duration(old)} → {format_duration(new)}).",
+        ),
+    )
+    return (
+        f"{verb.title()} **{format_duration(abs(applied))}** on {target} shift `#{row['id']}` "
+        f"({format_duration(old)} → {format_duration(new)})."
+    )
 
 
 def _parse_fastpass_args(rest: str) -> tuple[str | None, bool | None, bool | None]:

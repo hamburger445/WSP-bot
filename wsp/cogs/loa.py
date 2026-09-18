@@ -15,7 +15,7 @@ from wsp.constants import COLOR_DANGER, COLOR_GOLD, PermissionLevel
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, success_embed, ts
 from wsp.permissions import has_level, resolve_level
-from wsp.utils import ensure_personnel, mention_or_id, parse_date, reply_interaction
+from wsp.utils import ensure_personnel, member_from_id, mention_or_id, parse_date, reply_interaction, sync_loa_role
 
 if TYPE_CHECKING:
     from wsp.bot import WSPBot
@@ -352,12 +352,16 @@ async def _open_loa(
 
 
 async def _sync_personnel_leave(bot: WSPBot, guild: discord.Guild, discord_id: int) -> None:
+    on_leave = bool(await bot.db.active_loa(guild.id, discord_id))
     personnel = await bot.db.get_personnel(guild.id, discord_id)
-    if personnel is None or personnel["status"] not in {"active", "loa"}:
-        return
-    wanted = "loa" if await bot.db.active_loa(guild.id, discord_id) else "active"
-    if personnel["status"] != wanted:
-        await bot.db.update_personnel(personnel["id"], status=wanted)
+    if personnel is not None and personnel["status"] in {"active", "loa"}:
+        wanted = "loa" if on_leave else "active"
+        if personnel["status"] != wanted:
+            await bot.db.update_personnel(personnel["id"], status=wanted)
+    member = await member_from_id(bot, guild, discord_id)
+    if member:
+        cfg = await bot.guild_config(guild.id)
+        await sync_loa_role(member, cfg, on_leave)
 
 
 async def _announce_loa(
@@ -711,11 +715,7 @@ async def _decide_loa(bot: WSPBot, interaction: discord.Interaction, loa_id: int
         await _reply(interaction, error_embed("Already decided", f"This request is `{row['status']}`."))
         return
     await bot.db.update_loa(loa_id, status=status, reviewer_id=str(interaction.user.id), review_note=note)
-    personnel = await bot.db.get_personnel(interaction.guild.id, int(row["discord_id"]))
-    if personnel and status == "approved":
-        await bot.db.update_personnel(personnel["id"], status="loa")
-    if personnel and status == "denied" and personnel["status"] == "loa":
-        await bot.db.update_personnel(personnel["id"], status="active")
+    await _sync_personnel_leave(bot, interaction.guild, int(row["discord_id"]))
     await bot.db.audit(
         interaction.guild.id, f"loa_{status}", actor_id=interaction.user.id, actor_name=str(interaction.user),
         target_id=row["discord_id"], details=f"#{loa_id} {note or ''}",

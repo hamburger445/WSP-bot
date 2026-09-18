@@ -48,6 +48,9 @@ STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/shift reset` — reset all shift data",
         "`/quota admin` — change quota settings",
         "`/quota report` — who completed quota this week",
+        "`-add ID new 3m` — log a new ended shift",
+        "`-add ID recent 3m` — add time to the latest shift",
+        "`-remove ID recent 3m` — remove time from the latest shift",
     ]),
     ("Command", "Overview", [
         "`/loa active` — members on leave",

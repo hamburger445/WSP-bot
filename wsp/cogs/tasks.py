@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from discord.ext import commands, tasks
 
+from wsp.cogs.loa import _sync_personnel_leave
 from wsp.db import now_ts
 from wsp.embeds import base_embed, warning_embed
 from wsp.ops import complete_member_trial
@@ -24,18 +25,19 @@ class ScheduledTasks(commands.Cog):
         self.hourly.start()
         self.backup_job.start()
         self.trial_job.start()
+        self.loa_job.start()
 
     def cog_unload(self) -> None:
         self.hourly.cancel()
         self.backup_job.cancel()
         self.trial_job.cancel()
+        self.loa_job.cancel()
 
     @tasks.loop(hours=1)
     async def hourly(self) -> None:
         for guild in self.bot.guilds:
             try:
                 await self._quota_notices(guild.id)
-                await self._expire_loa(guild.id)
             except Exception:
                 log.exception("Hourly tasks failed for guild %s", guild.id)
 
@@ -72,6 +74,18 @@ class ScheduledTasks(commands.Cog):
 
     @trial_job.before_loop
     async def before_trials(self) -> None:
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=10)
+    async def loa_job(self) -> None:
+        for guild in self.bot.guilds:
+            try:
+                await self._expire_loa(guild.id)
+            except Exception:
+                log.exception("LOA tasks failed for guild %s", guild.id)
+
+    @loa_job.before_loop
+    async def before_loa(self) -> None:
         await self.bot.wait_until_ready()
 
     async def _quota_notices(self, guild_id: int) -> None:
@@ -127,15 +141,14 @@ class ScheduledTasks(commands.Cog):
         for row in rows:
             if int(row["end_date"]) < now:
                 await self.bot.db.update_loa(row["id"], status="expired")
-                personnel = await self.bot.db.get_personnel(guild_id, int(row["discord_id"]))
-                if personnel and personnel["status"] == "loa":
-                    await self.bot.db.update_personnel(personnel["id"], status="active")
                 if guild:
                     await self.bot.notify(
                         guild,
                         "loa",
                         base_embed("LOA ended", f"{mention_or_id(guild, row['discord_id'])} is back on the duty roster."),
                     )
+            if guild:
+                await _sync_personnel_leave(self.bot, guild, int(row["discord_id"]))
 
 
 async def setup(bot: WSPBot) -> None:

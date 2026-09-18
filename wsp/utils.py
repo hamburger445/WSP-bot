@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -334,6 +335,24 @@ async def sync_trial_role(member: discord.Member, cfg, on_trial: bool) -> None:
         await apply_role_changes(member, add=[], remove=[role], reason="WSP trial ended")
 
 
+async def sync_loa_role(member: discord.Member, cfg, on_leave: bool) -> None:
+    rid = cfg.role_id("loa")
+    if not rid:
+        return
+    live = await fetch_live_member(member.guild, member.id)
+    if live is not None:
+        member = live
+    roles = await resolve_guild_roles(member.guild, [rid])
+    role = roles.get(rid)
+    if not role:
+        return
+    has = rid in member_role_ids(member)
+    if on_leave and not has:
+        await apply_role_changes(member, add=[role], remove=[], reason="WSP leave of absence")
+    elif not on_leave and has:
+        await apply_role_changes(member, add=[], remove=[role], reason="WSP leave ended")
+
+
 async def member_from_id(bot: WSPBot, guild: discord.Guild | None, user_id: int) -> discord.Member | None:
     if guild is None:
         return None
@@ -370,6 +389,22 @@ def quota_required_minutes(member: discord.Member | None, cfg, rank_name: str | 
 
 def hms_to_seconds(hours: int | None, minutes: int | None, seconds: int | None) -> int:
     return max(0, int(hours or 0) * 3600 + int(minutes or 0) * 60 + int(seconds or 0))
+
+
+_COMPACT_DURATION = re.compile(r"(\d+)\s*([smhd])", re.IGNORECASE)
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def parse_compact_duration(text: str) -> int | None:
+    """Parse values like 3m, 1s, 1h, or 1h30m into seconds."""
+    total = 0
+    found = False
+    for amount, unit in _COMPACT_DURATION.findall(text or ""):
+        found = True
+        total += int(amount) * _DURATION_UNITS[unit.lower()]
+    if not found or total <= 0:
+        return None
+    return total
 
 
 def mention_or_id(guild: discord.Guild | None, discord_id: str | int | None) -> str:
