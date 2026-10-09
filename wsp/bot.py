@@ -65,6 +65,7 @@ COG_MODULES = [
     "wsp.cogs.prefix",
     "wsp.cogs.tasks",
     "wsp.cogs.academy",
+    "wsp.cogs.spamtrap",
 ]
 
 

@@ -220,6 +220,11 @@ class GuildConfig:
         if wanted_fastpass and current_fastpass != wanted_fastpass:
             self.set_path(["channels", "fastpass"], wanted_fastpass)
             changed = True
+        wanted_spam_trap = str((defaults.get("channels") or {}).get("spam_trap") or "")
+        current_spam_trap = str((self._data.get("channels") or {}).get("spam_trap") or "")
+        if wanted_spam_trap and current_spam_trap != wanted_spam_trap:
+            self.set_path(["channels", "spam_trap"], wanted_spam_trap)
+            changed = True
         quota_defaults = defaults.get("quota") or {}
         quota = self._data.setdefault("quota", {})
         if not isinstance(quota, dict):
