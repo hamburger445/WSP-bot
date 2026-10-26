@@ -134,23 +134,58 @@ class WSPBot(commands.Bot):
                         names.append(f"{cmd.name} {opt.name} {child.name}")
         return names
 
+    def command_invite_url(self) -> str:
+        app_id = self.application_id or (self.user.id if self.user else 0)
+        return (
+            f"https://discord.com/oauth2/authorize?client_id={app_id}"
+            "&scope=bot%20applications.commands"
+        )
+
     async def sync_app_commands(self) -> None:
-        guild_ids: set[int] = {g.id for g in self.guilds}
-        if self.settings.guild_id:
-            guild_ids.add(self.settings.guild_id)
-        if not guild_ids:
+        guilds = list(self.guilds)
+        if self.settings.guild_id and self.get_guild(self.settings.guild_id) is None:
+            log.warning(
+                "GUILD_ID %s is set but this bot is not in that server — skipping it for slash sync",
+                self.settings.guild_id,
+            )
+        if not guilds:
             synced = await self.tree.sync()
             self.synced_commands = self._flatten_names(synced)
             log.info("Synced %s global commands: %s", len(synced), self.synced_commands)
             return
         names: list[str] = []
-        for gid in guild_ids:
-            guild = discord.Object(id=gid)
-            self.tree.clear_commands(guild=guild)
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
+        synced_any = False
+        for guild in guilds:
+            try:
+                self.tree.clear_commands(guild=guild)
+                self.tree.copy_global_to(guild=guild)
+                synced = await self.tree.sync(guild=guild)
+            except discord.Forbidden:
+                log.warning(
+                    "Cannot publish slash commands in guild %s (Missing Access). "
+                    "Re-invite the bot with the applications.commands scope: %s",
+                    guild.id,
+                    self.command_invite_url(),
+                )
+                continue
             names = self._flatten_names(synced)
-            log.info("Synced %s root commands (%s menu entries) to guild %s: %s", len(synced), len(names), gid, names)
+            synced_any = True
+            log.info(
+                "Synced %s root commands (%s menu entries) to guild %s: %s",
+                len(synced),
+                len(names),
+                guild.id,
+                names,
+            )
+        if not synced_any:
+            synced = await self.tree.sync()
+            names = self._flatten_names(synced)
+            log.warning(
+                "Guild slash sync failed; published %s global commands instead (may take up to an hour). "
+                "To fix guild commands, re-invite with: %s",
+                len(synced),
+                self.command_invite_url(),
+            )
         self.synced_commands = names
 
     async def on_ready(self) -> None:
@@ -180,7 +215,7 @@ class WSPBot(commands.Bot):
                 self._synced = True
             except discord.Forbidden:
                 self.last_error = "command sync forbidden — re-invite the bot with the applications.commands scope"
-                log.exception(self.last_error)
+                log.warning("%s %s", self.last_error, self.command_invite_url())
             except Exception as exc:
                 self.last_error = f"command sync failed: {exc}"
                 log.exception("Command sync failed")
