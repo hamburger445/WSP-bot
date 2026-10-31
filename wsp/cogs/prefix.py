@@ -605,6 +605,9 @@ class Prefix(commands.Cog):
         if ctx.guild:
             self.bot.tree.copy_global_to(guild=ctx.guild)
             synced = await self.bot.tree.sync(guild=ctx.guild)
+            from wsp.cogs.rolecolor import restrict_rolecolor_command
+
+            await restrict_rolecolor_command(self.bot, ctx.guild, synced)
         else:
             synced = await self.bot.tree.sync()
         await ctx.send(embed=success_embed("Commands synced", f"{len(synced)} commands published."))

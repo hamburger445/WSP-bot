@@ -66,6 +66,7 @@ COG_MODULES = [
     "wsp.cogs.tasks",
     "wsp.cogs.academy",
     "wsp.cogs.spamtrap",
+    "wsp.cogs.rolecolor",
 ]
 
 
@@ -170,6 +171,9 @@ class WSPBot(commands.Bot):
                 continue
             names = self._flatten_names(synced)
             synced_any = True
+            from wsp.cogs.rolecolor import restrict_rolecolor_command
+
+            await restrict_rolecolor_command(self, guild, synced)
             log.info(
                 "Synced %s root commands (%s menu entries) to guild %s: %s",
                 len(synced),

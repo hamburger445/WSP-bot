@@ -225,6 +225,11 @@ class GuildConfig:
         if wanted_spam_trap and current_spam_trap != wanted_spam_trap:
             self.set_path(["channels", "spam_trap"], wanted_spam_trap)
             changed = True
+        wanted_command_log = str((defaults.get("channels") or {}).get("command_log") or "")
+        current_command_log = str((self._data.get("channels") or {}).get("command_log") or "")
+        if wanted_command_log and current_command_log != wanted_command_log:
+            self.set_path(["channels", "command_log"], wanted_command_log)
+            changed = True
         quota_defaults = defaults.get("quota") or {}
         quota = self._data.setdefault("quota", {})
         if not isinstance(quota, dict):

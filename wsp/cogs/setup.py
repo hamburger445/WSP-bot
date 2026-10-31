@@ -192,6 +192,9 @@ class Setup(commands.Cog):
         if interaction.guild:
             self.bot.tree.copy_global_to(guild=interaction.guild)
             synced = await self.bot.tree.sync(guild=interaction.guild)
+            from wsp.cogs.rolecolor import restrict_rolecolor_command
+
+            await restrict_rolecolor_command(self.bot, interaction.guild, synced)
         else:
             synced = await self.bot.tree.sync()
         await reply_interaction(interaction, embed=success_embed("Commands synced", f"{len(synced)} commands published."), ephemeral=True)
