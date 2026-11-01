@@ -90,7 +90,7 @@
   },
   "loa": {
     "min_hours_notice": 12,
-    "max_days": 30
+    "max_days": 0
   },
   "ranks": [
     {"name": "Probationary Trooper", "position": 1, "permission_level": 1},

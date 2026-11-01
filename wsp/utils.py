@@ -152,15 +152,39 @@ async def apply_role_changes(
 
 
 def parse_date(text: str, tz_name: str = "America/Chicago") -> int | None:
-    """Parse YYYY-MM-DD or YYYY-MM-DD HH:MM into a UTC unix timestamp."""
+    """Parse common date strings into a UTC unix timestamp.
+
+    Accepts `11/01/2026`, `11-01-26`, `YYYY-MM-DD`, and optional `HH:MM`.
+    """
     text = (text or "").strip()
+    if not text:
+        return None
     tz = ZoneInfo(tz_name)
-    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+    normalized = re.sub(r"[./]", "-", text)
+    match = re.fullmatch(
+        r"(\d{1,4})-(\d{1,2})-(\d{1,4})(?:[ T](\d{1,2}):(\d{2}))?",
+        normalized,
+    )
+    if match:
+        first, second, third, hour, minute = match.groups()
         try:
-            local = datetime.strptime(text, fmt).replace(tzinfo=tz)
+            if len(first) == 4:
+                year, month, day = int(first), int(second), int(third)
+            else:
+                month, day, year = int(first), int(second), int(third)
+                if year < 100:
+                    year += 2000
+            local = datetime(
+                year,
+                month,
+                day,
+                int(hour or 0),
+                int(minute or 0),
+                tzinfo=tz,
+            )
             return int(local.timestamp())
         except ValueError:
-            continue
+            return None
     return None
 
 

@@ -29,8 +29,8 @@ class LOA(commands.Cog):
 
     @loa.command(name="request", description="Request leave.")
     @app_commands.describe(
-        start_date="Start date",
-        end_date="End date",
+        start_date="Start date, such as 11/01/2026 or 11-01-26",
+        end_date="End date, such as 11/01/2026 or 11-01-26",
         reason="Reason",
         additional_information="More information",
     )
@@ -101,10 +101,10 @@ async def create_loa_request(
     start = parse_date(start_date, tz)
     end = parse_date(end_date, tz)
     if not start or not end or end <= start:
-        return False, error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`. End must be after start.")
-    max_days = int(cfg.get("loa", "max_days") or 30)
-    if end - start > max_days * 86400:
-        return False, error_embed("Too long", f"Leave may not exceed {max_days} days.")
+        return False, error_embed(
+            "Invalid dates",
+            "Use `11/01/2026`, `11-01-26`, or `YYYY-MM-DD`. End must be after start.",
+        )
     await ensure_personnel(bot, member)
     loa_id = await bot.db.create_loa(guild.id, member.id, start, end, reason, additional_information)
     await bot.db.audit(
@@ -233,9 +233,9 @@ async def edit_member_loa(
     start = parse_date(start_text, tz) if start_text else int(row["start_date"])
     end = parse_date(end_text, tz) if end_text else int(row["end_date"])
     if start_text and start is None:
-        return error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`.")
+        return error_embed("Invalid dates", "Use `11/01/2026`, `11-01-26`, or `YYYY-MM-DD`.")
     if end_text and end is None:
-        return error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`.")
+        return error_embed("Invalid dates", "Use `11/01/2026`, `11-01-26`, or `YYYY-MM-DD`.")
     if not start or not end or end <= start:
         return error_embed("Invalid dates", "End must be after start.")
     overlap = await _overlapping_approved(bot, guild.id, member.id, start, end, exclude_id=int(row["id"]))
@@ -293,7 +293,10 @@ async def _parse_loa_range(
     start = parse_date(start_date, tz)
     end = parse_date(end_date, tz)
     if not start or not end or end <= start:
-        return error_embed("Invalid dates", "Use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`. End must be after start.")
+        return error_embed(
+            "Invalid dates",
+            "Use `11/01/2026`, `11-01-26`, or `YYYY-MM-DD`. End must be after start.",
+        )
     return start, end
 
 
@@ -486,8 +489,8 @@ class LOAAdminView(discord.ui.View):
 
 
 class LOAAdminStartModal(discord.ui.Modal, title="Start leave"):
-    start_date = discord.ui.TextInput(label="Start date", placeholder="YYYY-MM-DD")
-    end_date = discord.ui.TextInput(label="End date", placeholder="YYYY-MM-DD")
+    start_date = discord.ui.TextInput(label="Start date", placeholder="11/01/2026 or 11-01-26")
+    end_date = discord.ui.TextInput(label="End date", placeholder="11/01/2026 or 11-01-26")
     reason = discord.ui.TextInput(label="Reason", required=False, max_length=200)
 
     def __init__(self, member: discord.Member) -> None:
@@ -506,8 +509,8 @@ class LOAAdminStartModal(discord.ui.Modal, title="Start leave"):
 
 
 class LOAAdminChangeModal(discord.ui.Modal, title="Change leave"):
-    start_date = discord.ui.TextInput(label="Start date", placeholder="YYYY-MM-DD")
-    end_date = discord.ui.TextInput(label="End date", placeholder="YYYY-MM-DD")
+    start_date = discord.ui.TextInput(label="Start date", placeholder="11/01/2026 or 11-01-26")
+    end_date = discord.ui.TextInput(label="End date", placeholder="11/01/2026 or 11-01-26")
     reason = discord.ui.TextInput(label="Reason", required=False, max_length=200)
 
     def __init__(self, member: discord.Member, start_default: str, end_default: str, reason_default: str) -> None:
@@ -604,8 +607,8 @@ class LOAMenuView(discord.ui.View):
 
 
 class LOARequestModal(discord.ui.Modal, title="Leave of Absence request"):
-    start_date = discord.ui.TextInput(label="Start date", placeholder="YYYY-MM-DD")
-    end_date = discord.ui.TextInput(label="End date", placeholder="YYYY-MM-DD")
+    start_date = discord.ui.TextInput(label="Start date", placeholder="11/01/2026 or 11-01-26")
+    end_date = discord.ui.TextInput(label="End date", placeholder="11/01/2026 or 11-01-26")
     reason = discord.ui.TextInput(label="Reason", max_length=200)
     additional = discord.ui.TextInput(label="Additional information", style=discord.TextStyle.paragraph, required=False, max_length=800)
 
