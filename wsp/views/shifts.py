@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from wsp.constants import COLOR_NAVY, COLOR_SUCCESS
+from wsp.constants import COLOR_MUTED, COLOR_NAVY, COLOR_SUCCESS, COLOR_WARNING
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.utils import (
@@ -120,10 +120,24 @@ def build_shift_management_embed(
     shift_count: int = 0,
     total_seconds: int = 0,
     status: str | None = None,
+    elapsed_seconds: int = 0,
 ) -> discord.Embed:
     average = total_seconds // shift_count if shift_count else 0
-    embed = base_embed(f"Shift Management: @{user.name}", color=COLOR_NAVY)
+    if status == "active":
+        color = COLOR_SUCCESS
+        headline = "You are **ON SHIFT**."
+        current = f"**ON SHIFT**\nElapsed: {format_duration(elapsed_seconds)}"
+    elif status == "paused":
+        color = COLOR_WARNING
+        headline = "Your shift is **PAUSED**."
+        current = f"**PAUSED**\nElapsed: {format_duration(elapsed_seconds)}"
+    else:
+        color = COLOR_MUTED
+        headline = "You are **OFF SHIFT**."
+        current = "**OFF SHIFT**\nStart a shift with the button below."
+    embed = base_embed(f"Shift Management: @{user.name}", headline, color=color)
     embed.set_thumbnail(url=user.display_avatar.url)
+    embed.add_field(name="Current status", value=current, inline=False)
     embed.add_field(
         name="All Time Information",
         value=(
@@ -133,7 +147,6 @@ def build_shift_management_embed(
         ),
         inline=False,
     )
-    embed.add_field(name="Current Status", value=str(status) if status else "Off duty", inline=False)
     return embed
 
 
@@ -152,6 +165,7 @@ async def build_shift_menu_message(
         shift_count=int(totals["shift_count"] or 0) if totals else 0,
         total_seconds=int(totals["total_seconds"] or 0) if totals else 0,
         status=status,
+        elapsed_seconds=current_shift_seconds(active) if active else 0,
     )
     view = ShiftActionView(status, owner_id=user.id, can_start=can_start)
     return [management], view
