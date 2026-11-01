@@ -377,6 +377,17 @@ async def sync_loa_role(member: discord.Member, cfg, on_leave: bool) -> None:
         await apply_role_changes(member, add=[], remove=[role], reason="WSP leave ended")
 
 
+def callsign_from_nickname(member: discord.Member | None) -> str | None:
+    """First three numbers in the member's server nickname."""
+    if member is None:
+        return None
+    name = member.nick or member.display_name or member.name or ""
+    digits = "".join(ch for ch in name if ch.isdigit())
+    if len(digits) >= 3:
+        return digits[:3]
+    return None
+
+
 async def member_from_id(bot: WSPBot, guild: discord.Guild | None, user_id: int) -> discord.Member | None:
     if guild is None:
         return None

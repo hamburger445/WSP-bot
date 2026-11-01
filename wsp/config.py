@@ -230,6 +230,11 @@ class GuildConfig:
         if wanted_command_log and current_command_log != wanted_command_log:
             self.set_path(["channels", "command_log"], wanted_command_log)
             changed = True
+        wanted_duty_tracker = str((defaults.get("channels") or {}).get("duty_tracker") or "")
+        current_duty_tracker = str((self._data.get("channels") or {}).get("duty_tracker") or "")
+        if wanted_duty_tracker and current_duty_tracker != wanted_duty_tracker:
+            self.set_path(["channels", "duty_tracker"], wanted_duty_tracker)
+            changed = True
         quota_defaults = defaults.get("quota") or {}
         quota = self._data.setdefault("quota", {})
         if not isinstance(quota, dict):

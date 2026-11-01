@@ -67,6 +67,7 @@ COG_MODULES = [
     "wsp.cogs.academy",
     "wsp.cogs.spamtrap",
     "wsp.cogs.rolecolor",
+    "wsp.cogs.duty_tracker",
 ]
 
 
@@ -94,11 +95,12 @@ class WSPBot(commands.Bot):
     async def setup_hook(self) -> None:
         from wsp.views.shifts import ShiftControlButton, ShiftMenuView
         from wsp.views.academy import AcademyStickyView
+        from wsp.views.duty_tracker import DutyControlButton
         from wsp.cogs.loa import DenyLOAButton, ApproveLOAButton
 
         self.add_view(ShiftMenuView())
         self.add_view(AcademyStickyView())
-        self.add_dynamic_items(ShiftControlButton, ApproveLOAButton, DenyLOAButton)
+        self.add_dynamic_items(ShiftControlButton, DutyControlButton, ApproveLOAButton, DenyLOAButton)
         self.tree.on_error = self.on_app_command_error
 
         for module in COG_MODULES:

@@ -12,8 +12,10 @@ from wsp.constants import COLOR_NAVY, COLOR_SUCCESS
 from wsp.db import now_ts
 from wsp.embeds import add_fields, base_embed, error_embed, format_duration, success_embed, ts, ts_rel
 from wsp.utils import (
+    callsign_from_nickname,
     current_shift_seconds,
     ensure_personnel,
+    fetch_live_member,
     member_can_start_shift,
     mention_or_id,
     reply_interaction as send_slash_reply,
@@ -239,9 +241,14 @@ async def begin_shift(
     existing = await bot.db.active_shift(guild.id, member.id)
     if existing:
         return ShiftResult(error=f"A shift is already active (started {ts_rel(existing['start_time'])}).")
+    live = await fetch_live_member(guild, member.id)
+    if live is not None:
+        member = live
     record = await ensure_personnel(bot, member)
     rank_name = record["rank_name"] if record else None
-    callsign = (record["callsign"] if record else None) or None
+    callsign = callsign_from_nickname(member) or ((record["callsign"] if record else None) or None)
+    if callsign and record:
+        await bot.db.update_personnel(record["id"], callsign=callsign)
     shift_id = await bot.db.start_shift(guild.id, member.id, rank_name, callsign)
     await sync_duty_role(member, cfg, True)
     await bot.db.log_activity(guild.id, member.id, "shift_start", f"Shift #{shift_id}")
@@ -254,12 +261,17 @@ async def begin_shift(
         target_name=str(member),
         details=f"Shift #{shift_id}",
     )
-    notice = success_embed("Shift started", f"**{rank_name or 'Trooper'}** is now on duty.")
+    notice = success_embed("Shift started", f"**{callsign or 'Unknown'}** started a shift.")
     add_fields(notice, [("Started", ts(now_ts()), True), ("Shift ID", f"#{shift_id}", True)])
     if actor.id != member.id:
         notice.add_field(name="Started by", value=actor.mention, inline=True)
-    log_embed = base_embed("Shift started", f"{member.mention} is now on duty.", color=COLOR_SUCCESS)
+    log_embed = base_embed(
+        "Shift started",
+        f"**{callsign or 'Unknown'}** ({member.mention}) started a shift.",
+        color=COLOR_SUCCESS,
+    )
     add_fields(log_embed, [("Shift", f"#{shift_id}", True), ("Started", ts(now_ts()), True)])
+    await _refresh_duty_tracker(bot, guild)
     return ShiftResult(notice=notice, log=log_embed, shift_id=shift_id)
 
 
@@ -300,6 +312,7 @@ async def complete_shift(bot: WSPBot, guild: discord.Guild, member: discord.Memb
         color=COLOR_NAVY,
     )
     add_fields(log_embed, [("Started", ts(row["start_time"]), True), ("Ended", ts(end), True)])
+    await _refresh_duty_tracker(bot, guild)
     return ShiftResult(notice=notice, log=log_embed, duration=duration, shift_id=int(row["id"]))
 
 
@@ -323,6 +336,7 @@ async def pause_shift(bot: WSPBot, guild: discord.Guild, member: discord.Member,
     if actor.id != member.id:
         notice.add_field(name="Paused by", value=actor.mention, inline=True)
     log_embed = base_embed("Shift paused", f"{member.mention} paused shift `#{row['id']}`.", color=COLOR_NAVY)
+    await _refresh_duty_tracker(bot, guild)
     return ShiftResult(notice=notice, log=log_embed, shift_id=int(row["id"]))
 
 
@@ -352,6 +366,7 @@ async def resume_shift(bot: WSPBot, guild: discord.Guild, member: discord.Member
     if actor.id != member.id:
         notice.add_field(name="Resumed by", value=actor.mention, inline=True)
     log_embed = base_embed("Shift resumed", f"{member.mention} resumed shift `#{row['id']}`.", color=COLOR_SUCCESS)
+    await _refresh_duty_tracker(bot, guild)
     return ShiftResult(notice=notice, log=log_embed, shift_id=int(row["id"]))
 
 
@@ -465,6 +480,9 @@ async def _finish_shift_action(
         row = await bot.db.active_shift(guild.id, interaction.user.id)
         status = row["status"] if row else None
         title = _message_title(interaction)
+        if title == "On duty":
+            await reply_interaction(interaction, notice)
+            return
         if title in {"Your shift", "Shift controls"} or title.startswith("Shift Management"):
             embeds: list[discord.Embed]
             view: ShiftActionView
@@ -512,6 +530,12 @@ async def _refresh_duty_board_message(interaction: discord.Interaction) -> None:
         await interaction.message.edit(embed=embed, view=ShiftMenuView())
     except discord.HTTPException:
         pass
+
+
+async def _refresh_duty_tracker(bot: WSPBot, guild: discord.Guild) -> None:
+    from wsp.views.duty_tracker import refresh_duty_tracker
+
+    await refresh_duty_tracker(bot, guild)
 
 
 def _message_title(interaction: discord.Interaction) -> str:

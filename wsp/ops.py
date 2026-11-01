@@ -282,6 +282,9 @@ async def reset_shift_data(bot: WSPBot, guild: discord.Guild, actor: discord.abc
         "command_log",
         base_embed("Shift data reset", f"{actor.mention} reset shift data."),
     )
+    from wsp.views.duty_tracker import refresh_duty_tracker
+
+    await refresh_duty_tracker(bot, guild)
     return deleted
 
 
@@ -391,6 +394,9 @@ async def end_active_shift(bot: WSPBot, guild: discord.Guild, discord_id: int) -
             f"<@{discord_id}> shift `#{row['id']}` closed after **{format_duration(duration)}** (termination).",
         ),
     )
+    from wsp.views.duty_tracker import refresh_duty_tracker
+
+    await refresh_duty_tracker(bot, guild)
 
 
 async def start_member_trial(
