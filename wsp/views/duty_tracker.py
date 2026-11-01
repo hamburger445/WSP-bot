@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from wsp.constants import COLOR_NAVY
+from wsp.constants import COLOR_SUCCESS
 from wsp.embeds import base_embed, format_duration
 from wsp.utils import callsign_from_nickname, current_shift_seconds, member_from_id, mention_or_id
 
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("wsp.duty_tracker")
 
 DEFAULT_DUTY_TRACKER_CHANNEL_ID = 1240078977020727337
-TRACKER_TITLE = "On duty"
+TRACKER_TITLE = "Duty tracker"
 
 _restick_locks: dict[int, asyncio.Lock] = {}
 _sending: set[int] = set()
@@ -117,7 +117,7 @@ async def build_duty_tracker_embed(bot: WSPBot, guild: discord.Guild) -> discord
     embed = base_embed(
         TRACKER_TITLE,
         "Use the buttons below for **your** shift. You do not need `/shift menu`.",
-        color=COLOR_NAVY,
+        color=COLOR_SUCCESS,
     )
     embed.add_field(name="Troopers", value="\n".join(lines)[:1024], inline=False)
     return embed

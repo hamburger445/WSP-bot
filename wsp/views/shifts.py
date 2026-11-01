@@ -480,7 +480,7 @@ async def _finish_shift_action(
         row = await bot.db.active_shift(guild.id, interaction.user.id)
         status = row["status"] if row else None
         title = _message_title(interaction)
-        if title == "On duty":
+        if title == "Duty tracker":
             await reply_interaction(interaction, notice)
             return
         if title in {"Your shift", "Shift controls"} or title.startswith("Shift Management"):
