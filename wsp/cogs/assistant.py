@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("wsp.assistant")
 
-_MODELS = ("gemini-2.5-flash", "gemini-2.0-flash")
+_MODELS = ("gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest")
 
 
 def _str_param(description: str) -> dict[str, str]:
@@ -147,11 +147,12 @@ def _generate(api_key: str, body: dict[str, Any]) -> dict[str, Any]:
             with urlopen(request, timeout=25) as response:
                 return json.loads(response.read().decode())
         except HTTPError as exc:
-            last_error = exc
+            detail = exc.read().decode(errors="replace")[:240]
+            last_error = RuntimeError(f"{model} HTTP {exc.code}: {detail}")
             if exc.code in {404, 400}:
+                log.warning("Gemini model %s was rejected: HTTP %s", model, exc.code)
                 continue
-            detail = exc.read().decode(errors="replace")[:300]
-            raise RuntimeError(detail) from exc
+            raise last_error from exc
         except URLError as exc:
             raise RuntimeError(str(exc.reason)) from exc
     raise RuntimeError(str(last_error) if last_error else "Gemini request failed")
@@ -160,6 +161,7 @@ def _generate(api_key: str, body: dict[str, Any]) -> dict[str, Any]:
 class Assistant(commands.Cog):
     def __init__(self, bot: WSPBot) -> None:
         self.bot = bot
+        self._history: dict[tuple[int, int], list[dict[str, Any]]] = {}
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -195,13 +197,14 @@ class Assistant(commands.Cog):
             f"Discord timestamp to reuse when asked: {ts(moment)}\n"
             f"Request: {text}"
         )
-        contents: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": prompt}]}]
+        prior = list(self._history.get((message.guild.id, message.author.id), []))
+        contents: list[dict[str, Any]] = [*prior, {"role": "user", "parts": [{"text": prompt}]}]
         system = (
-            "You run the Wisconsin State Patrol Discord bot. Call tools to perform the request. "
-            "Give or remove roles with tools. Do not describe a role instead of assigning it. "
-            "Do not tell the user which command to run. "
-            "After the tools finish, reply in one or two sentences with what happened. "
-            "If they asked for a timestamp, include the Discord timestamp from the prompt or tool result."
+            "You are the Wisconsin State Patrol Discord bot. When someone is just talking, have a normal conversation. "
+            "Be brief, natural, and answer the question. "
+            "When they ask you to do something the bot can do, call the matching tool and then say what you did. "
+            "Do not tell them which command to run. Giving or removing a role means calling the tool, not describing the role. "
+            "If they ask for a timestamp, include the Discord timestamp from the prompt or tool result."
         )
         used_shift_start = False
         try:
@@ -224,6 +227,7 @@ class Assistant(commands.Cog):
                         reply = f"{reply}\n{ts(moment)}"
                     if used_shift_start and "<t:" not in reply:
                         reply = f"{reply}\n{ts(moment)}"
+                    self._remember(message.guild.id, message.author.id, text, reply)
                     return reply
                 contents.append({"role": "model", "parts": parts})
                 responses = []
@@ -239,6 +243,13 @@ class Assistant(commands.Cog):
             log.exception("Assistant request failed")
             return "Command failed"
         return "Command failed"
+
+    def _remember(self, guild_id: int, user_id: int, user_text: str, reply: str) -> None:
+        turns = self._history.setdefault((guild_id, user_id), [])
+        turns.append({"role": "user", "parts": [{"text": user_text[:1500]}]})
+        turns.append({"role": "model", "parts": [{"text": reply[:1500]}]})
+        if len(turns) > 12:
+            del turns[:-12]
 
     async def _execute(self, actor: discord.Member, guild: discord.Guild, name: str, args: dict[str, Any]) -> str:
         try:

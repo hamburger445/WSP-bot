@@ -25,7 +25,7 @@ MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/shift history` — shift history",
         "`/quota view` — view quota",
         "`/quota leaderboard` — quota standings",
-        "Mention the bot — ask it to start, pause, or end your shift",
+        "Mention the bot — talk to it, or ask it to start, pause, or end your shift",
     ]),
     ("Leave", "Time away from duty", [
         "`/loa menu` — leave menu",
