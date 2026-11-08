@@ -25,6 +25,7 @@ MEMBER_CATALOG: list[tuple[str, str, list[str]]] = [
         "`/shift history` — shift history",
         "`/quota view` — view quota",
         "`/quota leaderboard` — quota standings",
+        "Mention the bot — ask it to start, pause, or end your shift",
     ]),
     ("Leave", "Time away from duty", [
         "`/loa menu` — leave menu",
@@ -51,6 +52,8 @@ STAFF_CATALOG: list[tuple[str, str, list[str]]] = [
         "`-add ID new 3m` — log a new ended shift",
         "`-add ID recent 3m` — add time to the latest shift",
         "`-remove ID recent 3m` — remove time from the latest shift",
+        "`-role @user Role` — give that role",
+        "`-unrole @user Role` — take that role",
     ]),
     ("Command", "Overview", [
         "`/loa active` — members on leave",

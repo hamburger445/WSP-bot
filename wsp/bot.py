@@ -68,6 +68,7 @@ COG_MODULES = [
     "wsp.cogs.spamtrap",
     "wsp.cogs.rolecolor",
     "wsp.cogs.duty_tracker",
+    "wsp.cogs.assistant",
 ]
 
 

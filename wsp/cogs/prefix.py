@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from wsp.constants import PermissionLevel
+from wsp.cogs.assistant import set_member_role
 from wsp.cogs.dashboard import ConfirmShiftResetView, DashboardView, overview_embed
 from wsp.cogs.help import HelpView, _catalog_embed
 from wsp.cogs.quota import Quota, build_quota_report
@@ -265,6 +266,28 @@ class Prefix(commands.Cog):
             return
         await complete_member_trial(self.bot, ctx.guild, row, early=True, actor=ctx.author)
         await ctx.send(embed=success_embed("Trial ended", f"{member.mention}'s trial was ended early."))
+
+    @commands.command(name="role")
+    @prefix_has_level(PermissionLevel.HR)
+    async def role_cmd(self, ctx: commands.Context, member: discord.Member, *, role_name: str) -> None:
+        if ctx.guild is None:
+            return
+        message = await set_member_role(ctx.guild, member, role_name, give=True)
+        if message in {"Not found", "Could not update roles."}:
+            await ctx.send(embed=error_embed(message))
+            return
+        await ctx.send(embed=success_embed("Role given", message))
+
+    @commands.command(name="unrole")
+    @prefix_has_level(PermissionLevel.HR)
+    async def unrole_cmd(self, ctx: commands.Context, member: discord.Member, *, role_name: str) -> None:
+        if ctx.guild is None:
+            return
+        message = await set_member_role(ctx.guild, member, role_name, give=False)
+        if message in {"Not found", "Could not update roles."}:
+            await ctx.send(embed=error_embed(message))
+            return
+        await ctx.send(embed=success_embed("Role removed", message))
 
     @commands.command(name="add")
     @prefix_has_level(PermissionLevel.HR)
